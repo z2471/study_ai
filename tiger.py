@@ -6,8 +6,9 @@ Run:
 """
 
 
-def main() -> None:
-    tiger = r"""
+def get_tiger_art() -> str:
+    """Return the ASCII tiger art."""
+    return r"""
                /\_/\\
               ( o.o )
                > ^ <
@@ -25,7 +26,9 @@ def main() -> None:
     TIGER!
     """.strip("\n")
 
-    print(tiger)
+
+def main() -> None:
+    print(get_tiger_art())
 
 
 if __name__ == "__main__":

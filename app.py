@@ -20,6 +20,10 @@ REPO_ROOT = ROOT
 HISTORY_DIR = ROOT / "history"
 HISTORY_DIR.mkdir(exist_ok=True)
 
+ORCH_STATE_PATH = HISTORY_DIR / "orchestrator_state.json"
+ORCH_MAX_GOAL_CHARS = 4000
+ORCH_MAX_TRANSCRIPT_CHARS = 20000
+
 
 def load_roles() -> dict:
     with open(ROOT / "roles.json", "r", encoding="utf-8") as f:
@@ -120,6 +124,31 @@ def run_cmd(cmd: str, cwd: Path = REPO_ROOT, timeout: int = 120) -> tuple[int, s
         timeout=timeout,
     )
     return p.returncode, p.stdout
+
+
+def _truncate(s: str, limit: int) -> str:
+    if s is None:
+        return ""
+    s = str(s)
+    return s if len(s) <= limit else s[:limit] + "\n...<truncated>..."
+
+
+def load_orchestrator_state() -> dict:
+    if not ORCH_STATE_PATH.exists():
+        return {"goal": "", "transcript": "", "updated_at": None}
+    try:
+        return json.loads(ORCH_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"goal": "", "transcript": "", "updated_at": None}
+
+
+def save_orchestrator_state(goal: str, transcript: str) -> None:
+    data = {
+        "goal": _truncate(goal or "", ORCH_MAX_GOAL_CHARS),
+        "transcript": _truncate(transcript or "", ORCH_MAX_TRANSCRIPT_CHARS),
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    ORCH_STATE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def repo_snapshot(max_chars: int = 5000) -> str:
@@ -245,10 +274,12 @@ if role_id == "coordinator":
     allow_write = st.checkbox("允许自动写入仓库文件（仅限本 repo）", value=False)
     allow_commit = st.checkbox("允许自动 git add/commit（不会 push）", value=False)
 
+    # Persist across reruns + restarts (size-limited)
+    persisted = load_orchestrator_state()
     if "coordinator_goal" not in st.session_state:
-        st.session_state.coordinator_goal = ""
+        st.session_state.coordinator_goal = persisted.get("goal", "") or ""
     if "orchestrator_transcript" not in st.session_state:
-        st.session_state.orchestrator_transcript = ""
+        st.session_state.orchestrator_transcript = persisted.get("transcript", "") or ""
 
     user_goal = st.text_area(
         "本次目标（自然语言）",
@@ -370,12 +401,26 @@ if role_id == "coordinator":
                         break
 
                 st.session_state.orchestrator_transcript = "\n\n".join(transcript)
+                # Persist (bounded size)
+                save_orchestrator_state(st.session_state.coordinator_goal, st.session_state.orchestrator_transcript)
                 st.markdown(st.session_state.orchestrator_transcript)
 
     if st.session_state.orchestrator_transcript:
         st.divider()
-        st.markdown("### 上一次自动调度输出（保留在本次会话）")
+        st.markdown("### 上一次自动调度输出（已持久化，大小受限）")
         st.markdown(st.session_state.orchestrator_transcript)
+
+    cols = st.columns(2)
+    with cols[0]:
+        if st.button("保存当前目标/输出", type="secondary"):
+            save_orchestrator_state(st.session_state.coordinator_goal, st.session_state.orchestrator_transcript)
+            st.toast("已保存（大小受限）")
+    with cols[1]:
+        if st.button("清空已保存的目标/输出", type="secondary"):
+            save_orchestrator_state("", "")
+            st.session_state.coordinator_goal = ""
+            st.session_state.orchestrator_transcript = ""
+            st.rerun()
 
 
 if prompt:

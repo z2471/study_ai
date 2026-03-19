@@ -113,6 +113,41 @@ def extract_json_block(text: str) -> Any | None:
         return None
 
 
+def should_autorun_orchestrator(text: str) -> bool:
+    """Heuristic: decide whether a coordinator chat message is a build/execute request.
+
+    - Explicit: starts with /run
+    - Implicit: contains strong implementation intent keywords.
+
+    You can still discuss normally; those messages won't trigger orchestration.
+    """
+
+    if not text:
+        return False
+    t = text.strip()
+    if t.lower().startswith("/run"):
+        return True
+
+    keywords = [
+        "写一个",
+        "做一个",
+        "实现",
+        "开发",
+        "生成",
+        "帮我写",
+        "帮我做",
+        "程序",
+        "脚本",
+        "工具",
+        "项目",
+        "pytest",
+        "ci",
+    ]
+    score = sum(1 for k in keywords if k in t.lower())
+    # Require a minimum signal to reduce accidental triggers.
+    return score >= 2
+
+
 def run_cmd(cmd: str, cwd: Path = REPO_ROOT, timeout: int = 120) -> tuple[int, str]:
     p = subprocess.run(
         cmd,
@@ -376,45 +411,20 @@ prompt = st.chat_input("给这个角色发消息（例如：给你一个任务�
 # --- Orchestrator UI (only shown in coordinator) ---
 if role_id == "coordinator":
     st.divider()
-    st.markdown("### 自动调度（B 模式：最多 10 轮 + 可自动写文件/提交）")
+    st.markdown("### 总指挥自动调度（单输入框）")
     st.caption(
-        "说明：你只对总指挥说需求；总指挥会调度写代码/审查/集成。\n"
-        "为了避免跑飞：最多 10 轮；写文件和 git commit 需要你勾选允许。"
+        "你直接在下方聊天框跟总指挥说话。\n"
+        "当总指挥判断你是在下达‘实现/写程序’类指令时，会自动调度写代码/审查/集成（最多10轮）。\n"
+        "你也可以用 **/run 你的目标** 强制触发自动执行。"
     )
 
-    allow_write = st.checkbox("允许自动写入仓库文件（仅限本 repo）", value=False, key="orch_allow_write")
-    allow_commit = st.checkbox("允许自动 git add/commit（不会 push）", value=False, key="orch_allow_commit")
-    auto_from_chat = st.checkbox("在对话框里给总指挥发消息时，自动触发执行（最多10轮）", value=True, key="orch_auto_from_chat")
+    st.checkbox("允许自动写入仓库文件（仅限本 repo）", value=False, key="orch_allow_write")
+    st.checkbox("允许自动 git add/commit（不会 push）", value=False, key="orch_allow_commit")
+    st.checkbox("自动判定是否触发执行（否则仅聊天）", value=True, key="orch_auto_from_chat")
 
-    # Persist across reruns + restarts (size-limited)
     persisted = load_orchestrator_state()
-    if "coordinator_goal" not in st.session_state:
-        st.session_state.coordinator_goal = persisted.get("goal", "") or ""
     if "orchestrator_transcript" not in st.session_state:
         st.session_state.orchestrator_transcript = persisted.get("transcript", "") or ""
-
-    user_goal = st.text_area(
-        "本次目标（自然语言）",
-        placeholder="例如：做一个命令行工具，把某目录下的 .txt 统计词频并输出 JSON，同时加 pytest。",
-        height=120,
-        key="coordinator_goal",
-    )
-
-    if st.button("开始自动执行（最多10轮）", type="primary", disabled=not bool(user_goal.strip())):
-        if not (gateway_token_present or api_key_present):
-            st.error("没有可用模型凭证，无法执行。请先配置 OPENCLAW_GATEWAY_TOKEN 或 OPENAI_API_KEY。")
-        else:
-            with st.spinner("自动调度执行中（可能需要几十秒~几分钟）..."):
-                st.session_state.orchestrator_transcript = run_orchestrator(
-                    user_goal=user_goal.strip(),
-                    roles=roles,
-                    model=model,
-                    allow_write=allow_write,
-                    allow_commit=allow_commit,
-                    max_rounds=10,
-                )
-                save_orchestrator_state(st.session_state.coordinator_goal, st.session_state.orchestrator_transcript)
-                st.markdown(st.session_state.orchestrator_transcript)
 
     if st.session_state.orchestrator_transcript:
         st.divider()
@@ -423,15 +433,12 @@ if role_id == "coordinator":
 
     cols = st.columns(2)
     with cols[0]:
-        if st.button("保存当前目标/输出", type="secondary"):
-            save_orchestrator_state(st.session_state.coordinator_goal, st.session_state.orchestrator_transcript)
-            st.toast("已保存（大小受限）")
-    with cols[1]:
         if st.button("清空已保存的目标/输出", type="secondary"):
             save_orchestrator_state("", "")
-            st.session_state.coordinator_goal = ""
             st.session_state.orchestrator_transcript = ""
             st.rerun()
+    with cols[1]:
+        st.write("")
 
 
 if prompt:
@@ -445,13 +452,17 @@ if prompt:
         with st.chat_message("assistant"):
             st.markdown("（未设置 OPENCLAW_GATEWAY_TOKEN 或 OPENAI_API_KEY，无法调用模型）")
     else:
-        # Coordinator can auto-run orchestration directly from the chat input.
-        if role_id == "coordinator" and st.session_state.get("orch_auto_from_chat", True):
-            st.session_state.coordinator_goal = prompt
+        # Coordinator: optionally auto-run orchestration directly from the chat input.
+        if role_id == "coordinator" and st.session_state.get("orch_auto_from_chat", True) and should_autorun_orchestrator(prompt):
+            # Support explicit /run prefix.
+            goal = prompt.strip()
+            if goal.lower().startswith("/run"):
+                goal = goal[4:].strip()
+
             with st.chat_message("assistant"):
                 with st.spinner("总指挥正在自动调度执行（最多10轮）..."):
                     transcript_md = run_orchestrator(
-                        user_goal=prompt,
+                        user_goal=goal,
                         roles=roles,
                         model=model,
                         allow_write=bool(st.session_state.get("orch_allow_write", False)),
@@ -459,7 +470,7 @@ if prompt:
                         max_rounds=10,
                     )
                     st.session_state.orchestrator_transcript = transcript_md
-                    save_orchestrator_state(st.session_state.coordinator_goal, st.session_state.orchestrator_transcript)
+                    save_orchestrator_state(goal, st.session_state.orchestrator_transcript)
                     st.markdown(transcript_md)
 
             assistant_msg = {

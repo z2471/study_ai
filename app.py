@@ -245,10 +245,16 @@ if role_id == "coordinator":
     allow_write = st.checkbox("允许自动写入仓库文件（仅限本 repo）", value=False)
     allow_commit = st.checkbox("允许自动 git add/commit（不会 push）", value=False)
 
+    if "coordinator_goal" not in st.session_state:
+        st.session_state.coordinator_goal = ""
+    if "orchestrator_transcript" not in st.session_state:
+        st.session_state.orchestrator_transcript = ""
+
     user_goal = st.text_area(
         "本次目标（自然语言）",
         placeholder="例如：做一个命令行工具，把某目录下的 .txt 统计词频并输出 JSON，同时加 pytest。",
         height=120,
+        key="coordinator_goal",
     )
 
     if st.button("开始自动执行（最多10轮）", type="primary", disabled=not bool(user_goal.strip())):
@@ -363,7 +369,13 @@ if role_id == "coordinator":
                         loop_state["notes"].append(f"Round {r}: done=true，停止。")
                         break
 
-                st.markdown("\n\n".join(transcript))
+                st.session_state.orchestrator_transcript = "\n\n".join(transcript)
+                st.markdown(st.session_state.orchestrator_transcript)
+
+    if st.session_state.orchestrator_transcript:
+        st.divider()
+        st.markdown("### 上一次自动调度输出（保留在本次会话）")
+        st.markdown(st.session_state.orchestrator_transcript)
 
 
 if prompt:

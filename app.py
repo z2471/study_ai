@@ -185,6 +185,117 @@ def call_role(role_id: str, roles: dict, history: list[dict], user_content: str,
     return resp.choices[0].message.content or ""
 
 
+def run_orchestrator(
+    user_goal: str,
+    roles: dict,
+    model: str,
+    allow_write: bool,
+    allow_commit: bool,
+    max_rounds: int = 10,
+) -> str:
+    """Run multi-agent orchestration and optionally apply changes.
+
+    Returns a markdown transcript.
+    """
+
+    transcript: list[str] = []
+    latest_snap = repo_snapshot()
+
+    coordinator_instruction = (
+        "你要作为 Orchestrator 自动调度团队完成用户目标。\n"
+        "你可以在每一轮输出一个 JSON 指令块（必须是严格 JSON），格式如下：\n\n"
+        "{\n"
+        "  \"round_goal\": \"本轮要达成什么\",\n"
+        "  \"calls\": [\n"
+        "    {\"to\": \"coder\"|\"reviewer\"|\"integrator\", \"task\": \"给该角色的具体指令\"}\n"
+        "  ],\n"
+        "  \"need_changes\": true|false,\n"
+        "  \"done\": true|false\n"
+        "}\n\n"
+        "规则：\n"
+        "- done=true 表示已经达到验收标准并停止。\n"
+        "- need_changes=true 表示下一步需要产出代码/文件变更（通常让 integrator 产出变更包）。\n"
+        "- 你必须以 ```json ...``` 包裹 JSON。\n"
+        "- 在给 integrator 的 task 里，要求它如果要改代码，输出一个严格 JSON：\n"
+        "  {\"files\":[{\"path\":\"相对路径\",\"content\":\"全文\"}],\"commands\":[...],\"commit_message\":\"...\"}\n"
+        "- 所有路径必须是仓库内相对路径，不允许删除文件。\n"
+        "- 每轮要参考最新 repo 快照和上一轮角色反馈，避免反复。\n"
+    )
+
+    loop_notes: list[str] = []
+    loop_notes.append(f"用户目标：\n{user_goal.strip()}")
+    loop_notes.append(f"初始仓库快照：\n{latest_snap}")
+
+    for r in range(1, max_rounds + 1):
+        coord_history = read_history("coordinator")[-20:]
+
+        coord_user = (
+            f"用户目标：\n{user_goal.strip()}\n\n"
+            f"当前仓库快照：\n{latest_snap}\n\n"
+            f"已知信息/上轮反馈：\n" + "\n".join(loop_notes[-20:])
+        )
+
+        coord_reply = call_role(
+            "coordinator",
+            roles,
+            coord_history,
+            coordinator_instruction + "\n\n" + coord_user,
+            model=model,
+        )
+        transcript.append(f"#### Round {r} - 总指挥\n{coord_reply}")
+
+        plan = extract_json_block(coord_reply)
+        if not isinstance(plan, dict):
+            loop_notes.append(f"Round {r}: 总指挥输出无法解析为 JSON，停止。")
+            break
+
+        calls_raw = plan.get("calls") or []
+        calls: list[RoleCall] = []
+        for c in calls_raw:
+            if not isinstance(c, dict):
+                continue
+            to = str(c.get("to", "")).strip()
+            task = str(c.get("task", "")).strip()
+            if to in roles and task:
+                calls.append(RoleCall(to=to, task=task))
+
+        for call in calls:
+            h = read_history(call.to)[-30:]
+            reply = call_role(call.to, roles, h, call.task, model=model)
+            transcript.append(f"**→ {roles[call.to]['name']}**\n\n{reply}")
+            loop_notes.append(f"Round {r} {call.to} reply:\n{reply}")
+
+            if call.to == "integrator" and allow_write:
+                bundle = extract_json_block(reply)
+                if isinstance(bundle, dict) and isinstance(bundle.get("files"), list):
+                    changed = apply_file_writes(bundle.get("files", []))
+                    loop_notes.append(f"Applied file writes: {changed}")
+
+                    cmd_logs: list[str] = []
+                    for cmd in bundle.get("commands", []) or []:
+                        if not isinstance(cmd, str) or not cmd.strip():
+                            continue
+                        code, out = run_cmd(cmd.strip(), timeout=300)
+                        cmd_logs.append(f"$ {cmd}\n{out}\n(exit={code})")
+                    if cmd_logs:
+                        loop_notes.append("Command logs:\n" + "\n\n".join(cmd_logs))
+
+                    latest_snap = repo_snapshot()
+
+                    if allow_commit:
+                        msg = str(bundle.get("commit_message") or f"auto: round {r}").strip()
+                        run_cmd("git add -A", timeout=60)
+                        code, out = run_cmd(f"git commit -m {json.dumps(msg)}", timeout=60)
+                        loop_notes.append(f"git commit: exit={code}\n{out}")
+                        latest_snap = repo_snapshot()
+
+        if bool(plan.get("done")):
+            loop_notes.append(f"Round {r}: done=true，停止。")
+            break
+
+    return "\n\n".join(transcript)
+
+
 def apply_file_writes(files: list[dict]) -> list[str]:
     changed: list[str] = []
     for f in files:
@@ -271,8 +382,9 @@ if role_id == "coordinator":
         "为了避免跑飞：最多 10 轮；写文件和 git commit 需要你勾选允许。"
     )
 
-    allow_write = st.checkbox("允许自动写入仓库文件（仅限本 repo）", value=False)
-    allow_commit = st.checkbox("允许自动 git add/commit（不会 push）", value=False)
+    allow_write = st.checkbox("允许自动写入仓库文件（仅限本 repo）", value=False, key="orch_allow_write")
+    allow_commit = st.checkbox("允许自动 git add/commit（不会 push）", value=False, key="orch_allow_commit")
+    auto_from_chat = st.checkbox("在对话框里给总指挥发消息时，自动触发执行（最多10轮）", value=True, key="orch_auto_from_chat")
 
     # Persist across reruns + restarts (size-limited)
     persisted = load_orchestrator_state()
@@ -293,115 +405,14 @@ if role_id == "coordinator":
             st.error("没有可用模型凭证，无法执行。请先配置 OPENCLAW_GATEWAY_TOKEN 或 OPENAI_API_KEY。")
         else:
             with st.spinner("自动调度执行中（可能需要几十秒~几分钟）..."):
-                transcript: list[str] = []
-
-                # Make a compact working memory.
-                latest_snap = repo_snapshot()
-
-                coordinator_instruction = (
-                    "你要作为 Orchestrator 自动调度团队完成用户目标。\n"
-                    "你可以在每一轮输出一个 JSON 指令块（必须是严格 JSON），格式如下：\n\n"
-                    "{\n"
-                    "  \"round_goal\": \"本轮要达成什么\",\n"
-                    "  \"calls\": [\n"
-                    "    {\"to\": \"coder\"|\"reviewer\"|\"integrator\", \"task\": \"给该角色的具体指令\"}\n"
-                    "  ],\n"
-                    "  \"need_changes\": true|false,\n"
-                    "  \"done\": true|false\n"
-                    "}\n\n"
-                    "规则：\n"
-                    "- done=true 表示已经达到验收标准并停止。\n"
-                    "- need_changes=true 表示下一步需要产出代码/文件变更（通常让 integrator 产出变更包）。\n"
-                    "- 你必须以 ```json ...``` 包裹 JSON。\n"
-                    "- 在给 integrator 的 task 里，要求它如果要改代码，输出一个严格 JSON：\n"
-                    "  {\"files\":[{\"path\":\"相对路径\",\"content\":\"全文\"}],\"commands\":[...],\"commit_message\":\"...\"}\n"
-                    "- 所有路径必须是仓库内相对路径，不允许删除文件。\n"
-                    "- 每轮要参考最新 repo 快照和上一轮角色反馈，避免反复。\n"
+                st.session_state.orchestrator_transcript = run_orchestrator(
+                    user_goal=user_goal.strip(),
+                    roles=roles,
+                    model=model,
+                    allow_write=allow_write,
+                    allow_commit=allow_commit,
+                    max_rounds=10,
                 )
-
-                # A minimal loop state we keep in coordinator prompt.
-                loop_state = {
-                    "user_goal": user_goal.strip(),
-                    "repo_snapshot": latest_snap,
-                    "notes": [],
-                }
-
-                for r in range(1, 11):
-                    coord_history = read_history("coordinator")[-20:]
-
-                    coord_user = (
-                        f"用户目标：\n{loop_state['user_goal']}\n\n"
-                        f"当前仓库快照：\n{loop_state['repo_snapshot']}\n\n"
-                        f"已知信息/上轮反馈：\n" + "\n".join(loop_state["notes"][-20:])
-                    )
-
-                    coord_reply = call_role(
-                        "coordinator",
-                        roles,
-                        coord_history,
-                        coordinator_instruction + "\n\n" + coord_user,
-                        model=model,
-                    )
-                    transcript.append(f"#### Round {r} - 总指挥\n{coord_reply}")
-
-                    plan = extract_json_block(coord_reply)
-                    if not isinstance(plan, dict):
-                        loop_state["notes"].append(f"Round {r}: 总指挥输出无法解析为 JSON，停止。")
-                        break
-
-                    calls_raw = plan.get("calls") or []
-                    calls: list[RoleCall] = []
-                    for c in calls_raw:
-                        if not isinstance(c, dict):
-                            continue
-                        to = str(c.get("to", "")).strip()
-                        task = str(c.get("task", "")).strip()
-                        if to in roles and task:
-                            calls.append(RoleCall(to=to, task=task))
-
-                    role_feedback: dict[str, str] = {}
-                    for call in calls:
-                        h = read_history(call.to)[-30:]
-                        reply = call_role(call.to, roles, h, call.task, model=model)
-                        role_feedback[call.to] = reply
-                        transcript.append(f"**→ {roles[call.to]['name']}**\n\n{reply}")
-
-                        loop_state["notes"].append(f"Round {r} {call.to} reply:\n{reply}")
-
-                        # Apply changes only if integrator returns a change bundle.
-                        if call.to == "integrator" and allow_write:
-                            bundle = extract_json_block(reply)
-                            if isinstance(bundle, dict) and isinstance(bundle.get("files"), list):
-                                changed = apply_file_writes(bundle.get("files", []))
-                                loop_state["notes"].append(f"Applied file writes: {changed}")
-
-                                # Run optional commands
-                                cmd_logs: list[str] = []
-                                for cmd in bundle.get("commands", []) or []:
-                                    if not isinstance(cmd, str) or not cmd.strip():
-                                        continue
-                                    code, out = run_cmd(cmd.strip(), timeout=300)
-                                    cmd_logs.append(f"$ {cmd}\n{out}\n(exit={code})")
-                                if cmd_logs:
-                                    loop_state["notes"].append("Command logs:\n" + "\n\n".join(cmd_logs))
-
-                                # Refresh snapshot after change
-                                loop_state["repo_snapshot"] = repo_snapshot()
-
-                                # Commit if allowed
-                                if allow_commit:
-                                    msg = str(bundle.get("commit_message") or f"auto: round {r}").strip()
-                                    run_cmd("git add -A", timeout=60)
-                                    code, out = run_cmd(f"git commit -m {json.dumps(msg)}", timeout=60)
-                                    loop_state["notes"].append(f"git commit: exit={code}\n{out}")
-                                    loop_state["repo_snapshot"] = repo_snapshot()
-
-                    if bool(plan.get("done")):
-                        loop_state["notes"].append(f"Round {r}: done=true，停止。")
-                        break
-
-                st.session_state.orchestrator_transcript = "\n\n".join(transcript)
-                # Persist (bounded size)
                 save_orchestrator_state(st.session_state.coordinator_goal, st.session_state.orchestrator_transcript)
                 st.markdown(st.session_state.orchestrator_transcript)
 
@@ -430,31 +441,56 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    if gateway_token_present or api_key_present:
-        client = get_client()
-
-        # Compose messages: system + role history (without ts)
-        messages = [{"role": "system", "content": role["system"]}]
-        for m in read_history(role_id):
-            if m.get("role") in ("user", "assistant"):
-                messages.append({"role": m["role"], "content": m.get("content", "")})
-
-        with st.chat_message("assistant"):
-            with st.spinner("思考中..."):
-                resp = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                )
-                content = resp.choices[0].message.content or ""
-                st.markdown(content)
-
-        assistant_msg = {
-            "role": "assistant",
-            "content": content,
-            "ts": datetime.utcnow().isoformat(),
-            "model": model,
-        }
-        append_history(role_id, assistant_msg)
-    else:
+    if not (gateway_token_present or api_key_present):
         with st.chat_message("assistant"):
             st.markdown("（未设置 OPENCLAW_GATEWAY_TOKEN 或 OPENAI_API_KEY，无法调用模型）")
+    else:
+        # Coordinator can auto-run orchestration directly from the chat input.
+        if role_id == "coordinator" and st.session_state.get("orch_auto_from_chat", True):
+            st.session_state.coordinator_goal = prompt
+            with st.chat_message("assistant"):
+                with st.spinner("总指挥正在自动调度执行（最多10轮）..."):
+                    transcript_md = run_orchestrator(
+                        user_goal=prompt,
+                        roles=roles,
+                        model=model,
+                        allow_write=bool(st.session_state.get("orch_allow_write", False)),
+                        allow_commit=bool(st.session_state.get("orch_allow_commit", False)),
+                        max_rounds=10,
+                    )
+                    st.session_state.orchestrator_transcript = transcript_md
+                    save_orchestrator_state(st.session_state.coordinator_goal, st.session_state.orchestrator_transcript)
+                    st.markdown(transcript_md)
+
+            assistant_msg = {
+                "role": "assistant",
+                "content": transcript_md,
+                "ts": datetime.utcnow().isoformat(),
+                "model": model,
+            }
+            append_history(role_id, assistant_msg)
+        else:
+            client = get_client()
+
+            # Compose messages: system + role history (without ts)
+            messages = [{"role": "system", "content": role["system"]}]
+            for m in read_history(role_id):
+                if m.get("role") in ("user", "assistant"):
+                    messages.append({"role": m["role"], "content": m.get("content", "")})
+
+            with st.chat_message("assistant"):
+                with st.spinner("思考中..."):
+                    resp = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                    )
+                    content = resp.choices[0].message.content or ""
+                    st.markdown(content)
+
+            assistant_msg = {
+                "role": "assistant",
+                "content": content,
+                "ts": datetime.utcnow().isoformat(),
+                "model": model,
+            }
+            append_history(role_id, assistant_msg)

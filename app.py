@@ -628,6 +628,8 @@ def render_hub(selected_team: str) -> None:
         missions = list((board.get("missions") or {}).values())
         running = [m for m in missions if m.get("status") == "Running" and m.get("type") == "main"]
         failed = [m for m in missions if m.get("status") == "Failed" and m.get("type") == "main"]
+        canceled = [m for m in missions if m.get("status") == "Canceled" and m.get("type") == "main"]
+        stopped = [m for m in missions if m.get("status") == "Stopped" and m.get("type") == "main"]
 
         # last event summary
         last_evt = None
@@ -645,6 +647,7 @@ def render_hub(selected_team: str) -> None:
                     st.caption(f"当前：{ws.get('current')}")
                 st.write(f"队列待执行：{len(queued)}")
                 st.write(f"Running: {len(running)} | Failed: {len(failed)}")
+                st.caption(f"Stopped: {len(stopped)} | Canceled: {len(canceled)}")
                 if last_evt:
                     st.caption(f"最近：[{last_evt.get('type')}] {last_evt.get('speaker_name')}")
                     snippet = str(last_evt.get('content','')).strip().replace('\n',' ')
@@ -888,7 +891,7 @@ def render_team_room(team_id: str) -> None:
                                 st.rerun()
 
         def _by_status(wanted: str) -> list[dict]:
-            if wanted == "Canceled":
+            if wanted in ("Canceled", "Stopped"):
                 return [m for m in missions if (m.get("status") == wanted and m.get("type") == "main")]
             return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
 
@@ -898,8 +901,9 @@ def render_team_room(team_id: str) -> None:
             ("Completed", "完成"),
             ("Failed", "失败"),
             ("Canceled", "已撤销"),
+            ("Stopped", "已停止"),
         ]
-        cols = st.columns(5)
+        cols = st.columns(6)
         for col, (status, label) in zip(cols, lanes):
             with col:
                 st.markdown(f"**{label}**")

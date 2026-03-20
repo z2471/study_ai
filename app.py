@@ -12,15 +12,18 @@ from openai import DefaultHttpxClient, OpenAI
 
 from team_ui import (
     TeamPaths,
+    cancel_queued_task,
     emit_event,
     enqueue_task,
     init_agent_state,
+    is_paused,
     load_json,
     load_worker_state,
     mission_set,
     read_jsonl,
     read_queue,
     save_json,
+    set_paused,
     set_worker_state,
     take_next_task,
     update_agent_state,
@@ -352,6 +355,15 @@ def run_orchestrator(
     loop_notes.append(f"初始仓库快照：\n{latest_snap}")
 
     for r in range(1, max_rounds + 1):
+        # Soft-stop: allow user to request stop for the running mission.
+        if team_paths is not None:
+            board = load_json(team_paths.mission_board, default={"missions": {}})
+            m = (board.get("missions") or {}).get(mission_id) or {}
+            if m.get("stop_requested"):
+                mission_set(team_paths, mission_id=mission_id, status="Stopped", finished_at=datetime.utcnow().isoformat())
+                emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_STOP_REQUESTED", content="检测到 stop_requested=true，已停止当前任务。", round=r, meta={"mission_id": mission_id}, cb=on_event)
+                return "\n\n".join(transcript)
+
         coord_history = read_history("coordinator")[-20:]
 
         coord_user = (
@@ -655,10 +667,38 @@ def render_team_room(team_id: str) -> None:
     ws = load_worker_state(tp)
     w_status = ws.get("status", "?")
     w_current = ws.get("current")
+    paused = bool(ws.get("paused"))
     q = read_queue(tp, limit=200)
     queued = [t for t in q if isinstance(t, dict) and t.get("status") in (None, "queued")]
     st.caption(f"队列：待执行 {len(queued)} 个")
-    if w_status == "Running":
+
+    # Worker controls
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if not paused:
+            if st.button("暂停 Worker", key="pause_worker"):
+                set_paused(tp, True)
+                emit_event(tp, speaker="system", speaker_name="系统", type="WORKER", content="Worker 已暂停")
+                st.rerun()
+        else:
+            if st.button("恢复 Worker", key="resume_worker"):
+                set_paused(tp, False)
+                emit_event(tp, speaker="system", speaker_name="系统", type="WORKER", content="Worker 已恢复")
+                st.rerun()
+
+    with c2:
+        if w_status == "Running" and w_current:
+            if st.button("停止当前任务", key="stop_current"):
+                mission_set(tp, mission_id=w_current, stop_requested=True)
+                emit_event(tp, speaker="system", speaker_name="系统", type="MISSION_STOP_REQUEST", content=f"已请求停止：{w_current}", meta={"mission_id": w_current})
+                st.warning("已请求停止：将在下一轮开始前生效（软停止）。")
+
+    with c3:
+        st.write("")
+
+    if paused:
+        st.warning("Worker：Paused（暂停中）")
+    elif w_status == "Running":
         st.info(f"Worker：Running | 当前任务：{w_current}")
     else:
         st.success("Worker：Idle（空闲）")
@@ -671,6 +711,9 @@ def render_team_room(team_id: str) -> None:
         while True:
             try:
                 ws = load_worker_state(tp)
+                if ws.get("paused"):
+                    time.sleep(1.0)
+                    continue
                 if ws.get("status") in (None, "Idle"):
                     task = take_next_task(tp)
                     if task:
@@ -779,6 +822,8 @@ def render_team_room(team_id: str) -> None:
                 st.error(f"失败原因：{main.get('error_summary')}")
 
         def _by_status(wanted: str) -> list[dict]:
+            if wanted == "Canceled":
+                return [m for m in missions if (m.get("status") == wanted and m.get("type") == "main")]
             return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
 
         lanes = [
@@ -786,8 +831,9 @@ def render_team_room(team_id: str) -> None:
             ("Running", "执行中"),
             ("Completed", "完成"),
             ("Failed", "失败"),
+            ("Canceled", "已撤销"),
         ]
-        cols = st.columns(4)
+        cols = st.columns(5)
         for col, (status, label) in zip(cols, lanes):
             with col:
                 st.markdown(f"**{label}**")
@@ -820,6 +866,18 @@ def render_team_room(team_id: str) -> None:
                         st.caption(f"owner: {owner} | round: {rnd} | t: {ttxt}")
                         if m.get("status") == "Failed" and m.get("error_summary"):
                             st.error(str(m.get("error_summary"))[:200])
+
+                        # Cancel queued main missions
+                        if m.get("type") == "main" and m.get("status") == "Backlog" and mid_:
+                            if st.button("撤销", key=f"cancel_{mid_}"):
+                                ok = cancel_queued_task(tp, mid_)
+                                if ok:
+                                    mission_set(tp, mission_id=mid_, status="Canceled", finished_at=datetime.utcnow().isoformat())
+                                    emit_event(tp, speaker="system", speaker_name="系统", type="CANCEL", content=f"已撤销：{mid_}", meta={"mission_id": mid_})
+                                    st.rerun()
+                                else:
+                                    st.warning("撤销失败：可能已开始执行或不在队列中")
+
                         # "Jump" behavior: filter/highlight related timeline events.
                         if mid_:
                             if st.button("定位到时间线", key=f"jump_{mid_}"):

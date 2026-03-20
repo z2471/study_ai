@@ -225,3 +225,35 @@ def set_worker_state(paths: TeamPaths, **patch: Any) -> dict:
     cur["updated_at"] = utc_ts()
     save_json(paths.worker_state, cur)
     return cur
+
+
+def set_paused(paths: TeamPaths, paused: bool) -> dict:
+    return set_worker_state(paths, paused=bool(paused))
+
+
+def is_paused(paths: TeamPaths) -> bool:
+    ws = load_worker_state(paths)
+    return bool(ws.get("paused"))
+
+
+def cancel_queued_task(paths: TeamPaths, mission_id: str) -> bool:
+    """Mark a queued task as canceled by mission_id."""
+    if not mission_id:
+        return False
+    q = read_jsonl(paths.task_queue, limit=None)
+    if not q:
+        return False
+    changed = False
+    for obj in q:
+        if isinstance(obj, dict) and obj.get("mission_id") == mission_id and obj.get("status") in (None, "queued"):
+            obj["status"] = "canceled"
+            obj["canceled_at"] = utc_ts()
+            changed = True
+    if not changed:
+        return False
+    tmp = paths.task_queue.with_suffix(".jsonl.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for obj in q:
+            f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    tmp.replace(paths.task_queue)
+    return True

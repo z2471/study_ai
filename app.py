@@ -600,6 +600,12 @@ def render_hub(selected_team: str) -> None:
         running = [m for m in missions if m.get("status") == "Running" and m.get("type") == "main"]
         failed = [m for m in missions if m.get("status") == "Failed" and m.get("type") == "main"]
 
+        # last event summary
+        last_evt = None
+        evts = read_jsonl(tp.event_log, limit=1)
+        if evts:
+            last_evt = evts[-1]
+
         with cols[i % 4]:
             with st.container(border=True):
                 st.markdown(f"**{t.get('name', tid)}**")
@@ -610,6 +616,17 @@ def render_hub(selected_team: str) -> None:
                     st.caption(f"当前：{ws.get('current')}")
                 st.write(f"队列待执行：{len(queued)}")
                 st.write(f"Running: {len(running)} | Failed: {len(failed)}")
+                if last_evt:
+                    st.caption(f"最近：[{last_evt.get('type')}] {last_evt.get('speaker_name')}")
+                    snippet = str(last_evt.get('content','')).strip().replace('\n',' ')
+                    if len(snippet) > 80:
+                        snippet = snippet[:80] + '…'
+                    if snippet:
+                        st.caption(snippet)
+                    st.caption(last_evt.get('ts','-'))
+                else:
+                    st.caption("最近：-（暂无事件）")
+
                 if st.button("进入团队", key=f"enter_{tid}"):
                     st.query_params.update({"page": "team", "team": tid})
                     st.rerun()

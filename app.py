@@ -741,7 +741,18 @@ with st.sidebar:
     st.divider()
     st.subheader("连接状态")
 
-    gateway_token_present = bool(os.getenv("OPENCLAW_GATEWAY_TOKEN"))
+    # Detect gateway token: env first, then local ~/.openclaw/openclaw.json
+    gateway_token = os.getenv("OPENCLAW_GATEWAY_TOKEN")
+    if not gateway_token:
+        try:
+            cfg_path = Path.home() / ".openclaw" / "openclaw.json"
+            if cfg_path.exists():
+                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                gateway_token = (((cfg.get("gateway") or {}).get("auth") or {}).get("token"))
+        except Exception:
+            gateway_token = None
+
+    gateway_token_present = bool(gateway_token)
     api_key_present = bool(os.getenv("OPENAI_API_KEY"))
 
     if gateway_token_present:
@@ -749,7 +760,7 @@ with st.sidebar:
         st.write("OPENCLAW_GATEWAY_URL:", os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789/v1"))
         st.write("OPENCLAW_AGENT_ID:", os.getenv("OPENCLAW_AGENT_ID", "main"))
         model = st.text_input("模型名", value=os.getenv("OPENAI_MODEL", "openclaw"))
-        st.caption("此模式下不需要 OpenAI Key；模型名通常用 openclaw。")
+        st.caption("已自动读取本机 OpenClaw Gateway token；此模式不需要 OpenAI Key。模型名通常用 openclaw。")
     else:
         st.write("OpenClaw Gateway 代转:", "❌ 未启用")
         st.write("OPENAI_API_KEY:", "✅ 已设置" if api_key_present else "❌ 未设置")
@@ -1351,7 +1362,7 @@ tick();
                                 ttxt = f"{int(esl)}s"
                             else:
                                 ttxt = "-"
-                            st.caption(f"owner: {owner} | round: {rnd} | t: {ttxt}")
+                            st.caption(f"负责人: {owner} | 轮次: {rnd} | 用时: {ttxt}")
                             if m.get("status") == "Failed" and m.get("error_summary"):
                                 st.error(str(m.get("error_summary"))[:200])
 

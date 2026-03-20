@@ -884,10 +884,10 @@ def render_team_room(team_id: str) -> None:
             # Seat positions tuned for the new office background (room-wrap ~720x480)
             # 4 seats around the central 4-monitor desk.
             seats = [
-                {"rid": "coordinator", "x": 330, "y": 185},  # top seat (move up)
-                {"rid": "coder", "x": 225, "y": 275},         # left seat (move up)
-                {"rid": "reviewer", "x": 465, "y": 275},      # right seat (move up)
-                {"rid": "integrator", "x": 345, "y": 335},    # bottom seat (move up)
+                {"rid": "coordinator", "x": 315, "y": 165},
+                {"rid": "coder", "x": 205, "y": 258},
+                {"rid": "reviewer", "x": 445, "y": 258},
+                {"rid": "integrator", "x": 330, "y": 310},
             ]
 
             lottie_js = _lottie_js()
@@ -963,7 +963,7 @@ def render_team_room(team_id: str) -> None:
   .glow{position:absolute;left:8px;top:46px;width:160px;height:92px;border-radius:20px;filter:blur(16px);opacity:.26;pointer-events:none;}
 
   /* Avatar */
-  .avatar{position:absolute;left:64px;top:42px;width:92px;height:92px;z-index:5;cursor:pointer;
+  .avatar{position:absolute;left:58px;top:36px;width:80px;height:80px;z-index:5;cursor:pointer;
           display:flex;align-items:center;justify-content:center;
           border-radius:999px;
           background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.45), rgba(255,255,255,.10));
@@ -976,9 +976,11 @@ def render_team_room(team_id: str) -> None:
           opacity:.98;}
 
   /* Idle / Working motion */
-  @keyframes wander {0%{transform:translate(0,0)}25%{transform:translate(6px,-3px)}50%{transform:translate(-5px,4px)}75%{transform:translate(4px,6px)}100%{transform:translate(0,0)}}
+  @keyframes wander {0%{transform:translate(0,0)}25%{transform:translate(8px,-4px)}50%{transform:translate(-7px,5px)}75%{transform:translate(6px,8px)}100%{transform:translate(0,0)}}
+  @keyframes floaty {0%{transform:translate(0,0)}50%{transform:translate(0,-4px)}100%{transform:translate(0,0)}}
   @keyframes workbob {0%{transform:translate(0,0)}50%{transform:translate(0,-3px)}100%{transform:translate(0,0)}}
-  .avatar.idleWander{animation:wander 2.8s ease-in-out infinite;}
+  .avatar.floaty{animation:floaty 1.6s ease-in-out infinite;}
+  .avatar.idleWander{animation:wander 3.2s ease-in-out infinite;}
   .avatar.workingBob{animation:workbob 0.9s ease-in-out infinite;}
 
   .label{position:absolute;left:10px;top:6px;font:12px/1.2 sans-serif;color:#0f172a;opacity:.95;
@@ -1015,6 +1017,9 @@ function mkSeat(s){
   glow.style.background=s.color;
 
   const avatar=document.createElement('div'); avatar.className='avatar';
+  avatar.classList.add('floaty');
+  // phase offsets so they don't move in sync
+  avatar.style.animationDelay = (Math.random()*0.8).toFixed(2) + 's';
   if (!s.task) { avatar.classList.add('idleWander'); }
   if (s.status === 'Working') { avatar.classList.add('workingBob'); }
 

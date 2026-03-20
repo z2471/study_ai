@@ -561,34 +561,45 @@ h1,h2,h3,h4,h5,h6, p, li, div { color: #e5e7eb; }
 }
 
 /* Inputs (text_input / text_area / chat_input) */
-/* Baseweb inputs: set background on the OUTER control, not the raw <input> */
+/* Strong, explicit selectors for Streamlit wrappers */
+div[data-testid="stTextInput"] [data-baseweb="input"] > div,
+div[data-testid="stTextArea"] [data-baseweb="textarea"] > div,
+div[data-testid="stChatInput"] [data-baseweb="textarea"] > div,
 [data-baseweb="input"] > div,
 [data-baseweb="textarea"] > div{
-  background: rgba(15,23,42,.55) !important;
-  border: 1px solid rgba(255,255,255,.18) !important;
+  background: rgba(2,6,23,.78) !important;
+  border: 1px solid rgba(255,255,255,.20) !important;
   border-radius: 12px !important;
 }
+
 /* Raw html inputs inside */
+div[data-testid="stTextInput"] input,
+div[data-testid="stTextArea"] textarea,
+div[data-testid="stChatInput"] textarea,
 [data-baseweb="input"] input,
 [data-baseweb="textarea"] textarea,
 input, textarea{
   background: transparent !important;
   color: #e5e7eb !important;
+  caret-color: #a78bfa !important;
 }
 
+/* Placeholders */
+div[data-testid="stTextInput"] input::placeholder,
+div[data-testid="stTextArea"] textarea::placeholder,
+div[data-testid="stChatInput"] textarea::placeholder,
 input::placeholder, textarea::placeholder,
 [data-baseweb="input"] input::placeholder,
-[data-baseweb="textarea"] textarea::placeholder{ color: rgba(229,231,235,.82) !important; }
+[data-baseweb="textarea"] textarea::placeholder{ color: rgba(229,231,235,.86) !important; }
 
+/* Focus */
+div[data-testid="stTextInput"] [data-baseweb="input"]:focus-within > div,
+div[data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within > div,
+div[data-testid="stChatInput"] [data-baseweb="textarea"]:focus-within > div,
 [data-baseweb="input"]:focus-within > div,
 [data-baseweb="textarea"]:focus-within > div{
-  border-color: rgba(168,85,247,.65) !important;
-  box-shadow: 0 0 0 3px rgba(168,85,247,.18) !important;
-}
-
-/* Chat input */
-[data-testid="stChatInput"] [data-baseweb="textarea"] > div{
-  background: rgba(15,23,42,.55) !important;
+  border-color: rgba(168,85,247,.72) !important;
+  box-shadow: 0 0 0 3px rgba(168,85,247,.22) !important;
 }
 
 /* Selectbox / dropdown (baseweb) */

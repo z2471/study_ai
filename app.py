@@ -536,14 +536,14 @@ st.title("AI 开发团队管理台")
 
 ensure_registry_and_migrate_default()
 
+# Query params: team_id
+qp = st.query_params
+current_team = str(qp.get("team", "team_default"))
+
 # Load roles for the currently selected team
 _tp0 = team_paths(current_team)
 roles = load_roles(roles_path_for_team(_tp0))
 role_ids = list(roles.keys())
-
-# Query params: team_id
-qp = st.query_params
-current_team = str(qp.get("team", "team_default"))
 
 # Sidebar
 with st.sidebar:

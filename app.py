@@ -593,9 +593,14 @@ def render_team_room() -> None:
         # Main mission header
         with st.container(border=True):
             st.markdown(f"**主任务**：{main.get('title','(none)')}")
+            status = main.get("status", "(none)")
+            elapsed = main.get("elapsed_sec")
+            elapsed_txt = f" | 耗时：{int(elapsed)}s" if isinstance(elapsed, (int, float)) else ""
             st.caption(
-                f"状态：{main.get('status','(none)')}  | 开始：{main.get('started_at','-')}  | 结束：{main.get('finished_at','-')}"
+                f"状态：{status}{elapsed_txt}  | 开始：{main.get('started_at','-')}  | 结束：{main.get('finished_at','-')}"
             )
+            if status == "Failed" and main.get("error_summary"):
+                st.error(f"失败原因：{main.get('error_summary')}")
 
         def _by_status(wanted: str) -> list[dict]:
             return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
@@ -621,6 +626,8 @@ def render_team_room() -> None:
                     with st.container(border=True):
                         st.markdown(title)
                         st.caption(f"owner: {owner} | round: {rnd}")
+                        if m.get("status") == "Failed" and m.get("error_summary"):
+                            st.error(str(m.get("error_summary"))[:200])
                         # "Jump" behavior: filter/highlight related timeline events.
                         if mid_:
                             if st.button("定位到时间线", key=f"jump_{mid_}"):

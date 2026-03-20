@@ -884,10 +884,10 @@ def render_team_room(team_id: str) -> None:
             # Seat positions tuned for the new office background (room-wrap ~720x480)
             # 4 seats around the central 4-monitor desk.
             seats = [
-                {"rid": "coordinator", "x": 345, "y": 238},  # top seat
-                {"rid": "coder", "x": 255, "y": 320},         # left seat
-                {"rid": "reviewer", "x": 438, "y": 325},      # right seat
-                {"rid": "integrator", "x": 360, "y": 385},    # bottom seat
+                {"rid": "coordinator", "x": 338, "y": 220},  # top seat
+                {"rid": "coder", "x": 238, "y": 318},         # left seat
+                {"rid": "reviewer", "x": 452, "y": 318},      # right seat
+                {"rid": "integrator", "x": 356, "y": 398},    # bottom seat
             ]
 
             lottie_js = _lottie_js()
@@ -1028,23 +1028,27 @@ function mkSeat(s){
       </linearGradient>
     </defs>
     <!-- shadow -->
-    <ellipse cx="46" cy="83" rx="24" ry="7" fill="#0f172a" opacity=".10"/>
-    <!-- body -->
-    <path d="M30 62 C32 52 40 46 46 46 C52 46 60 52 62 62 L62 74 C62 78 58 82 54 82 H38 C34 82 30 78 30 74 Z" fill="url(#g1)" stroke="#0f172a" opacity=".18"/>
-    <!-- head -->
-    <path d="M34 38 C34 28 40 20 46 20 C52 20 58 28 58 38 C58 48 52 55 46 55 C40 55 34 48 34 38 Z" fill="url(#skin)"/>
+    <ellipse cx="46" cy="83" rx="22" ry="6" fill="#0f172a" opacity=".10"/>
+    <!-- torso -->
+    <path d="M28 60 C30 50 40 44 46 44 C52 44 62 50 64 60 L66 76 C66 80 62 84 58 84 H34 C30 84 26 80 26 76 Z" fill="url(#g1)"/>
+    <!-- head (smaller) -->
+    <circle cx="46" cy="32" r="15" fill="url(#skin)"/>
     <!-- hair -->
-    <path d="M32 36 C33 24 40 16 46 16 C54 16 61 24 60 36 C58 30 54 26 46 26 C39 26 35 30 32 36 Z" fill="#1f2937" opacity=".9"/>
+    <path d="M31 33 C33 20 41 14 46 14 C54 14 62 20 61 33 C58 26 54 22 46 22 C39 22 35 26 31 33 Z" fill="#1f2937" opacity=".9"/>
+    <!-- arms -->
+    <path d="M28 62 C20 64 18 70 22 74 C26 78 30 72 32 68" fill="none" stroke="#0f172a" stroke-opacity=".20" stroke-width="6" stroke-linecap="round"/>
+    <path d="M64 62 C72 64 74 70 70 74 C66 78 62 72 60 68" fill="none" stroke="#0f172a" stroke-opacity=".20" stroke-width="6" stroke-linecap="round"/>
     <!-- laptop -->
-    <path d="M22 58 L70 58 L76 74 L16 74 Z" fill="#111827" opacity=".92"/>
-    <path d="M28 60 L64 60 L68 70 L24 70 Z" fill="#0b1220"/>
-    <rect x="30" y="61" width="32" height="7" rx="2" fill="#60a5fa" opacity=".55"/>
+    <path d="M18 58 L74 58 L80 76 L12 76 Z" fill="#111827" opacity=".92"/>
+    <path d="M24 60 L68 60 L72 72 L20 72 Z" fill="#0b1220"/>
+    <rect x="28" y="61" width="36" height="8" rx="2" fill="#60a5fa" opacity=".55"/>
   </svg>`;
   avatar.appendChild(fb);
 
   d.appendChild(glow);
   d.appendChild(avatar);
-  d.appendChild(label);
+  // label hidden for now (user will decide later)
+  // d.appendChild(label);
 
   try{
     const animData = s.anim;

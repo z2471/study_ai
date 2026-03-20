@@ -968,11 +968,13 @@ def render_team_room(team_id: str) -> None:
         }
   .avatar:hover{filter: drop-shadow(0 0 16px rgba(168,85,247,.45)) drop-shadow(0 0 16px rgba(59,130,246,.35));}
   .avatar .fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-          font-size:44px;opacity:.92;}
+          opacity:.98;}
 
-  /* Idle wander */
+  /* Idle / Working motion */
   @keyframes wander {0%{transform:translate(0,0)}25%{transform:translate(6px,-3px)}50%{transform:translate(-5px,4px)}75%{transform:translate(4px,6px)}100%{transform:translate(0,0)}}
+  @keyframes workbob {0%{transform:translate(0,0)}50%{transform:translate(0,-3px)}100%{transform:translate(0,0)}}
   .avatar.idleWander{animation:wander 2.8s ease-in-out infinite;}
+  .avatar.workingBob{animation:workbob 0.9s ease-in-out infinite;}
 
   .label{position:absolute;left:10px;top:6px;font:12px/1.2 sans-serif;color:#0f172a;opacity:.95;
          background:rgba(255,255,255,.75);padding:3px 8px;border-radius:12px;border:1px solid rgba(15,23,42,.10)}
@@ -1010,8 +1012,34 @@ function mkSeat(s){
 
   const avatar=document.createElement('div'); avatar.className='avatar';
   if (!s.task) { avatar.classList.add('idleWander'); }
-  // fallback lobster (always visible unless lottie renders on top)
-  const fb=document.createElement('div'); fb.className='fallback'; fb.textContent='🦞';
+  if (s.status === 'Working') { avatar.classList.add('workingBob'); }
+  // fallback 3D-ish programmer avatar (always visible unless lottie renders on top)
+  const fb=document.createElement('div'); fb.className='fallback';
+  fb.innerHTML = `
+  <svg width="92" height="92" viewBox="0 0 92 92" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#93c5fd"/>
+        <stop offset="1" stop-color="#c4b5fd"/>
+      </linearGradient>
+      <linearGradient id="skin" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fcd7b6"/>
+        <stop offset="1" stop-color="#f8b48f"/>
+      </linearGradient>
+    </defs>
+    <!-- shadow -->
+    <ellipse cx="46" cy="83" rx="24" ry="7" fill="#0f172a" opacity=".10"/>
+    <!-- body -->
+    <path d="M30 62 C32 52 40 46 46 46 C52 46 60 52 62 62 L62 74 C62 78 58 82 54 82 H38 C34 82 30 78 30 74 Z" fill="url(#g1)" stroke="#0f172a" opacity=".18"/>
+    <!-- head -->
+    <path d="M34 38 C34 28 40 20 46 20 C52 20 58 28 58 38 C58 48 52 55 46 55 C40 55 34 48 34 38 Z" fill="url(#skin)"/>
+    <!-- hair -->
+    <path d="M32 36 C33 24 40 16 46 16 C54 16 61 24 60 36 C58 30 54 26 46 26 C39 26 35 30 32 36 Z" fill="#1f2937" opacity=".9"/>
+    <!-- laptop -->
+    <path d="M22 58 L70 58 L76 74 L16 74 Z" fill="#111827" opacity=".92"/>
+    <path d="M28 60 L64 60 L68 70 L24 70 Z" fill="#0b1220"/>
+    <rect x="30" y="61" width="32" height="7" rx="2" fill="#60a5fa" opacity=".55"/>
+  </svg>`;
   avatar.appendChild(fb);
 
   d.appendChild(glow);

@@ -567,9 +567,16 @@ div[data-testid="stTextArea"] [data-baseweb="textarea"] > div,
 div[data-testid="stChatInput"] [data-baseweb="textarea"] > div,
 [data-baseweb="input"] > div,
 [data-baseweb="textarea"] > div{
-  background: rgba(2,6,23,.78) !important;
-  border: 1px solid rgba(255,255,255,.20) !important;
+  background-color: rgba(2,6,23,.86) !important;
+  border: 1px solid rgba(255,255,255,.22) !important;
   border-radius: 12px !important;
+}
+
+/* Some Streamlit versions apply background on a deeper wrapper */
+div[data-testid="stTextInput"] [data-baseweb="input"] div,
+div[data-testid="stTextArea"] [data-baseweb="textarea"] div,
+div[data-testid="stChatInput"] [data-baseweb="textarea"] div{
+  background-color: transparent !important;
 }
 
 /* Raw html inputs inside */
@@ -618,13 +625,22 @@ div[data-baseweb="popover"] > div{
   background: transparent !important;
 }
 
+/* Dropdown list containers (Baseweb) */
 ul[role="listbox"],
 div[role="listbox"],
 div[data-baseweb="menu"],
+div[data-baseweb="popover"] div[role="dialog"],
+div[data-baseweb="popover"] div[role="presentation"],
 div[role="dialog"],
 div[role="presentation"]{
-  background: rgba(17,24,39,.98) !important;
+  background-color: rgba(17,24,39,.98) !important;
   border: 1px solid rgba(255,255,255,.18) !important;
+}
+
+/* Ensure inner wrappers don't stay white */
+div[role="dialog"] *,
+div[role="presentation"] *{
+  color: #e5e7eb !important;
 }
 
 /* Options */
@@ -633,14 +649,14 @@ div[role="option"],
 div[data-baseweb="menu"] li,
 div[data-baseweb="menu"] div,
 [role="listbox"] *{
-  background: transparent !important;
+  background-color: transparent !important;
   color: #e5e7eb !important;
 }
 
 /* Option hover/active */
 li[role="option"]:hover,
 div[role="option"]:hover{
-  background: rgba(168,85,247,.18) !important;
+  background-color: rgba(168,85,247,.18) !important;
 }
 
 /* Buttons */

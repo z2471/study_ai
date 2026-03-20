@@ -40,8 +40,59 @@ ORCH_STATE_PATH = HISTORY_DIR / "orchestrator_state.json"
 ORCH_MAX_GOAL_CHARS = 4000
 ORCH_MAX_TRANSCRIPT_CHARS = 20000
 
-TEAM_PATHS = TeamPaths(HISTORY_DIR)
+TEAMS_ROOT = HISTORY_DIR / "teams"
+REGISTRY_PATH = TEAMS_ROOT / "registry.json"
 TEAM_EVENTS_LIMIT = 400
+
+
+def team_paths(team_id: str) -> TeamPaths:
+    team_id = (team_id or "team_default").strip()
+    safe = re.sub(r"[^a-zA-Z0-9._-]", "_", team_id)
+    return TeamPaths(TEAMS_ROOT / safe)
+
+
+def ensure_registry_and_migrate_default() -> None:
+    """Create teams registry, and migrate legacy single-team files into team_default.
+
+    Legacy files live directly under HISTORY_DIR (history/*.jsonl, team_room.jsonl, mission_board.json, etc.).
+    We COPY them into history/teams/team_default on first run to avoid destructive moves.
+    """
+
+    TEAMS_ROOT.mkdir(parents=True, exist_ok=True)
+
+    if not REGISTRY_PATH.exists():
+        data = {
+            "teams": [
+                {
+                    "id": "team_default",
+                    "name": "study_ai 默认团队",
+                    "created_at": datetime.utcnow().isoformat(),
+                }
+            ]
+        }
+        REGISTRY_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Migrate if legacy markers exist.
+    legacy_markers = [
+        HISTORY_DIR / "team_room.jsonl",
+        HISTORY_DIR / "mission_board.json",
+        HISTORY_DIR / "task_queue.jsonl",
+        HISTORY_DIR / "agent_state.json",
+        HISTORY_DIR / "worker_state.json",
+    ]
+    if any(p.exists() for p in legacy_markers):
+        dst = team_paths("team_default").history_dir
+        dst.mkdir(parents=True, exist_ok=True)
+        # Copy only known team-related files
+        for p in legacy_markers:
+            if p.exists():
+                (dst / p.name).write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+        # Also copy per-role histories (coordinator/coder/reviewer/integrator)
+        for p in HISTORY_DIR.glob("*.jsonl"):
+            if p.name in ("team_room.jsonl", "task_queue.jsonl"):
+                continue
+            (dst / p.name).write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+        # Keep legacy files in place (non-destructive).
 
 
 def load_roles() -> dict:
@@ -443,11 +494,50 @@ def apply_file_writes(files: list[dict]) -> list[str]:
 st.set_page_config(page_title="AI 开发团队管理台", layout="wide")
 st.title("AI 开发团队管理台")
 
+ensure_registry_and_migrate_default()
+
 roles = load_roles()
 role_ids = list(roles.keys())
 
+# Query params: team_id
+qp = st.query_params
+current_team = str(qp.get("team", "team_default"))
+
 # Sidebar
 with st.sidebar:
+    st.header("页面")
+    page = st.radio(
+        "选择页面",
+        ["hub", "team"],
+        format_func=lambda v: "总控面板" if v == "hub" else "团队面板",
+        label_visibility="collapsed",
+        index=0 if str(qp.get("page", "hub")) == "hub" else 1,
+    )
+
+    st.divider()
+    st.header("团队")
+    # Read registry
+    reg = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    teams = reg.get("teams") or []
+    # Sort by created_at asc
+    teams = sorted(teams, key=lambda x: x.get("created_at") or "")
+    team_ids = [t.get("id") for t in teams if t.get("id")]
+
+    if current_team not in team_ids and team_ids:
+        current_team = team_ids[0]
+
+    selected_team = st.selectbox(
+        "选择团队",
+        team_ids,
+        index=team_ids.index(current_team) if current_team in team_ids else 0,
+        format_func=lambda tid: next((t.get("name") for t in teams if t.get("id") == tid), tid),
+    )
+
+    if selected_team != current_team:
+        st.query_params.update({"team": selected_team, "page": page})
+        st.rerun()
+
+    st.divider()
     st.header("视图")
     view_mode = st.radio(
         "选择视图",
@@ -490,8 +580,44 @@ with st.sidebar:
         st.rerun()
 
 
-def render_team_room() -> None:
-    st.subheader("团队聊天室（Team Room）")
+def render_hub(selected_team: str) -> None:
+    st.subheader("总控面板（Team Hub）")
+    reg = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    teams = reg.get("teams") or []
+    teams = sorted(teams, key=lambda x: x.get("created_at") or "")
+
+    cols = st.columns(4)
+    for i, t in enumerate(teams):
+        tid = t.get("id")
+        if not tid:
+            continue
+        tp = team_paths(tid)
+        ws = load_worker_state(tp)
+        q = read_queue(tp, limit=500)
+        queued = [x for x in q if isinstance(x, dict) and x.get("status") in (None, "queued")]
+        board = load_json(tp.mission_board, default={"missions": {}})
+        missions = list((board.get("missions") or {}).values())
+        running = [m for m in missions if m.get("status") == "Running" and m.get("type") == "main"]
+        failed = [m for m in missions if m.get("status") == "Failed" and m.get("type") == "main"]
+
+        with cols[i % 4]:
+            with st.container(border=True):
+                st.markdown(f"**{t.get('name', tid)}**")
+                st.caption(f"team_id: {tid}")
+                st.caption(f"创建：{t.get('created_at','-')}")
+                st.write(f"Worker: {ws.get('status','?')}")
+                if ws.get("status") == "Running":
+                    st.caption(f"当前：{ws.get('current')}")
+                st.write(f"队列待执行：{len(queued)}")
+                st.write(f"Running: {len(running)} | Failed: {len(failed)}")
+                if st.button("进入团队", key=f"enter_{tid}"):
+                    st.query_params.update({"page": "team", "team": tid})
+                    st.rerun()
+
+
+def render_team_room(team_id: str) -> None:
+    tp = team_paths(team_id)
+    st.subheader(f"团队面板：{team_id}")
 
     # Controls
     cols = st.columns(4)
@@ -503,16 +629,16 @@ def render_team_room() -> None:
         auto_refresh = st.checkbox("自动刷新（2秒）", value=True, key="team_auto_refresh")
     with cols[3]:
         if st.button("清空团队事件/状态", type="secondary"):
-            for p in [TEAM_PATHS.event_log, TEAM_PATHS.agent_state, TEAM_PATHS.mission_board, TEAM_PATHS.task_queue, TEAM_PATHS.worker_state]:
+            for p in [tp.event_log, tp.agent_state, tp.mission_board, tp.task_queue, tp.worker_state]:
                 if p.exists():
                     p.unlink()
             st.rerun()
 
     # Worker status bar (very visible)
-    ws = load_worker_state(TEAM_PATHS)
+    ws = load_worker_state(tp)
     w_status = ws.get("status", "?")
     w_current = ws.get("current")
-    q = read_queue(TEAM_PATHS, limit=200)
+    q = read_queue(tp, limit=200)
     queued = [t for t in q if isinstance(t, dict) and t.get("status") in (None, "queued")]
     st.caption(f"队列：待执行 {len(queued)} 个")
     if w_status == "Running":
@@ -527,9 +653,9 @@ def render_team_room() -> None:
     def _worker_loop() -> None:
         while True:
             try:
-                ws = load_worker_state(TEAM_PATHS)
+                ws = load_worker_state(tp)
                 if ws.get("status") in (None, "Idle"):
-                    task = take_next_task(TEAM_PATHS)
+                    task = take_next_task(tp)
                     if task:
                         mission_id = str(task.get("mission_id") or "mission:main")
                         goal = str(task.get("goal") or "").strip()
@@ -537,8 +663,8 @@ def render_team_room() -> None:
                         allow_commit_ = bool(task.get("allow_commit"))
                         model_ = str(task.get("model") or model)
 
-                        set_worker_state(TEAM_PATHS, status="Running", current=mission_id)
-                        emit_event(TEAM_PATHS, speaker="system", speaker_name="系统", type="WORKER", content=f"开始执行队列任务：{mission_id}")
+                        set_worker_state(tp, status="Running", current=mission_id)
+                        emit_event(tp, speaker="system", speaker_name="系统", type="WORKER", content=f"开始执行队列任务：{mission_id}")
 
                         try:
                             transcript_md = run_orchestrator(
@@ -548,16 +674,16 @@ def render_team_room() -> None:
                                 allow_write=allow_write_,
                                 allow_commit=allow_commit_,
                                 max_rounds=10,
-                                team_paths=TEAM_PATHS,
+                                team_paths=tp,
                                 mission_id=mission_id,
                                 on_event=None,
                             )
                             save_orchestrator_state(goal, transcript_md)
                         except Exception as e:
-                            emit_event(TEAM_PATHS, speaker="system", speaker_name="系统", type="ERROR", content=f"Worker 执行异常：{e}")
-                            mission_set(TEAM_PATHS, mission_id=mission_id, status="Failed", error_summary=str(e))
+                            emit_event(tp, speaker="system", speaker_name="系统", type="ERROR", content=f"Worker 执行异常：{e}")
+                            mission_set(tp, mission_id=mission_id, status="Failed", error_summary=str(e))
                         finally:
-                            set_worker_state(TEAM_PATHS, status="Idle", current=None)
+                            set_worker_state(tp, status="Idle", current=None)
                 time.sleep(1.0)
             except Exception:
                 # Avoid worker dying.
@@ -581,7 +707,7 @@ def render_team_room() -> None:
 
     with right:
         st.markdown("### 办公室大屏")
-        agent_state = load_json(TEAM_PATHS.agent_state, default=init_agent_state(role_ids, roles))
+        agent_state = load_json(tp.agent_state, default=init_agent_state(role_ids, roles))
         for rid in ["coordinator", "coder", "reviewer", "integrator"]:
             s = agent_state.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}
             with st.container(border=True):
@@ -602,15 +728,15 @@ def render_team_room() -> None:
     with mid:
         st.markdown("### Mission 看板")
         # Touch the missions to update live elapsed for running items.
-        board = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
+        board = load_json(tp.mission_board, default={"missions": {}})
         for _mid, _m in (board.get("missions") or {}).items():
             try:
                 if isinstance(_m, dict) and _m.get("status") == "Running" and _m.get("started_at") and not _m.get("finished_at"):
-                    mission_set(TEAM_PATHS, mission_id=_mid, started_at=_m.get("started_at"))
+                    mission_set(tp, mission_id=_mid, started_at=_m.get("started_at"))
             except Exception:
                 pass
 
-        board = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
+        board = load_json(tp.mission_board, default={"missions": {}})
         missions = list((board.get("missions") or {}).values())
         # For backward compatibility, pick the newest main mission as "current".
         mains = [m for m in missions if m.get("type") == "main"]
@@ -687,7 +813,7 @@ def render_team_room() -> None:
         timeline_box = st.container(height=520)
 
         def render_timeline() -> None:
-            evts = read_jsonl(TEAM_PATHS.event_log, limit=TEAM_EVENTS_LIMIT)
+            evts = read_jsonl(tp.event_log, limit=TEAM_EVENTS_LIMIT)
             selected_mid = st.session_state.get("team_selected_mission")
 
             with timeline_box:
@@ -725,9 +851,9 @@ def render_team_room() -> None:
             # Create a new mission id per task.
             mission_id = f"mission:{int(datetime.utcnow().timestamp())}"
 
-            emit_event(TEAM_PATHS, speaker="user", speaker_name="你", type="USER", content=prompt, meta={"mission_id": mission_id}, cb=None)
+            emit_event(tp, speaker="user", speaker_name="你", type="USER", content=prompt, meta={"mission_id": mission_id}, cb=None)
             mission_set(
-                TEAM_PATHS,
+                tp,
                 mission_id=mission_id,
                 title=prompt.strip()[:120] or "(no title)",
                 status="Backlog",
@@ -736,7 +862,7 @@ def render_team_room() -> None:
             )
 
             enqueue_task(
-                TEAM_PATHS,
+                tp,
                 {
                     "mission_id": mission_id,
                     "goal": prompt.strip(),
@@ -748,7 +874,7 @@ def render_team_room() -> None:
                 },
             )
 
-            emit_event(TEAM_PATHS, speaker="system", speaker_name="系统", type="QUEUE", content=f"已入队：{mission_id}", meta={"mission_id": mission_id}, cb=None)
+            emit_event(tp, speaker="system", speaker_name="系统", type="QUEUE", content=f"已入队：{mission_id}", meta={"mission_id": mission_id}, cb=None)
             st.success(f"任务已入队：{mission_id}（正在执行的任务不会被打断）")
             st.rerun()
 
@@ -758,8 +884,13 @@ def render_single_role() -> None:
     st.subheader(f"当前角色：{role['name']}")
 
 
+if page == "hub":
+    render_hub(selected_team)
+    st.stop()
+
+# page == team
 if view_mode == "team_room":
-    render_team_room()
+    render_team_room(selected_team)
     st.stop()
 
 render_single_role()

@@ -525,11 +525,69 @@ def render_team_room() -> None:
             emit_event(TEAM_PATHS, speaker="user", speaker_name="你", type="USER", content=prompt, cb=None)
 
             # Live callback: refresh right panel state + timeline
+            import time
+
+            # Live refresh placeholders
+            timeline_live = st.empty()
+            office_live = st.empty()
+            mission_live = st.empty()
+
+            # Throttle UI refresh to keep Streamlit stable.
+            refresh_every_sec = 0.8
+            last_refresh = 0.0
+
+            def render_office_mission() -> None:
+                agent_state_live = load_json(TEAM_PATHS.agent_state, default=init_agent_state(role_ids, roles))
+                with office_live.container():
+                    st.markdown("### 办公室大屏（实时）")
+                    for rid in ["coordinator", "coder", "reviewer", "integrator"]:
+                        s = agent_state_live.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}
+                        with st.container(border=True):
+                            st.markdown(f"**{s.get('name', rid)}**")
+                            st.caption(f"状态：{s.get('status','')}  |  Round: {s.get('round','-')}")
+                            if s.get("task"):
+                                st.markdown(f"任务：{s['task']}")
+                            if s.get("last"):
+                                st.caption("最近输出：")
+                                st.code(str(s.get("last"))[-600:], language="markdown")
+
+                board_live = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
+                current_live = (board_live.get("missions") or {}).get("current") or {}
+                with mission_live.container():
+                    st.markdown("### Mission 看板（实时）")
+                    with st.container(border=True):
+                        st.markdown(f"**当前任务**：{current_live.get('title','(none)')}")
+                        st.caption(
+                            f"状态：{current_live.get('status','(none)')}  | 开始：{current_live.get('started_at','-')}  | 结束：{current_live.get('finished_at','-')}"
+                        )
+
+            def render_timeline_live() -> None:
+                evts = read_jsonl(TEAM_PATHS.event_log, limit=TEAM_EVENTS_LIMIT)
+                with timeline_live.container():
+                    st.markdown("### 时间线（完整日志，实时）")
+                    # Render newest at bottom
+                    for e in evts:
+                        speaker_name = e.get("speaker_name") or e.get("speaker")
+                        typ = e.get("type")
+                        ts = e.get("ts")
+                        rnd = e.get("round")
+                        header = f"[{typ}] {speaker_name}  (round {rnd})\n{ts}" if rnd else f"[{typ}] {speaker_name}\n{ts}"
+                        with st.chat_message("assistant"):
+                            st.caption(header)
+                            st.markdown(e.get("content", ""))
+
+            # Initial render
+            render_office_mission()
+            render_timeline_live()
+
             def on_event(evt: dict) -> None:
-                # When events come in, re-render timeline and right side panels by rerun.
-                # Streamlit doesn't support partial refresh reliably across columns without rerun.
-                # We keep it simple: write a small placeholder log line and rely on the final rerun.
-                pass
+                nonlocal last_refresh
+                now = time.time()
+                if now - last_refresh < refresh_every_sec:
+                    return
+                last_refresh = now
+                render_office_mission()
+                render_timeline_live()
 
             with st.spinner("总指挥正在调度执行（最多10轮）..."):
                 transcript_md = run_orchestrator(
@@ -540,12 +598,14 @@ def render_team_room() -> None:
                     allow_commit=bool(allow_commit),
                     max_rounds=10,
                     team_paths=TEAM_PATHS,
-                    on_event=None,  # MVP: write to file; UI will refresh at end
+                    on_event=on_event,
                 )
-                # Persist orchestrator transcript as well (optional)
                 save_orchestrator_state(prompt.strip(), transcript_md)
 
-            st.rerun()
+            # Final refresh
+            render_office_mission()
+            render_timeline_live()
+            st.info("执行完成（或达到最大轮数停止）。")
 
 
 def render_single_role() -> None:

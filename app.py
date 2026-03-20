@@ -552,30 +552,58 @@ st.markdown(
 }
 h1,h2,h3,h4,h5,h6, p, li, div { color: #e5e7eb; }
 
+/* Remove/skin Streamlit top bar */
+[data-testid="stHeader"], header[data-testid="stHeader"]{
+  background: transparent !important;
+}
+[data-testid="stToolbar"]{
+  background: transparent !important;
+}
+
 /* Inputs (text_input / text_area / chat_input) */
 input, textarea{
-  background: rgba(255,255,255,.08) !important;
+  background: rgba(255,255,255,.10) !important;
   color: #e5e7eb !important;
-  border: 1px solid rgba(255,255,255,.16) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
   border-radius: 12px !important;
 }
-input::placeholder, textarea::placeholder{ color: rgba(229,231,235,.70) !important; }
+/* Streamlit wraps inputs in baseweb; style those too */
+[data-baseweb="input"] > div,
+[data-baseweb="textarea"] > div{
+  background: rgba(255,255,255,.10) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  border-radius: 12px !important;
+}
+input::placeholder, textarea::placeholder{ color: rgba(229,231,235,.80) !important; }
+[data-baseweb="input"] input::placeholder,
+[data-baseweb="textarea"] textarea::placeholder{ color: rgba(229,231,235,.80) !important; }
+
 input:focus, textarea:focus{
   outline: none !important;
-  border-color: rgba(168,85,247,.55) !important;
-  box-shadow: 0 0 0 3px rgba(168,85,247,.15) !important;
+  border-color: rgba(168,85,247,.65) !important;
+  box-shadow: 0 0 0 3px rgba(168,85,247,.18) !important;
+}
+
+/* Chat input (sometimes shadow DOM-ish) */
+[data-testid="stChatInput"] textarea{
+  background: rgba(255,255,255,.10) !important;
+  color: #e5e7eb !important;
 }
 
 /* Selectbox / dropdown (baseweb) */
 [data-baseweb="select"] > div{
-  background: rgba(255,255,255,.06) !important;
-  border: 1px solid rgba(255,255,255,.16) !important;
+  background: rgba(255,255,255,.08) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  border-radius: 12px !important;
 }
 [data-baseweb="select"] *{ color: #e5e7eb !important; }
+/* Popover list is sometimes rendered elsewhere */
+div[data-baseweb="popover"] ul[role="listbox"],
 ul[role="listbox"]{
-  background: rgba(17,24,39,.96) !important;
-  border: 1px solid rgba(255,255,255,.16) !important;
+  background: rgba(17,24,39,.98) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
 }
+div[data-baseweb="popover"] ul[role="listbox"] li,
 ul[role="listbox"] li{ color:#e5e7eb !important; }
 
 /* Buttons */

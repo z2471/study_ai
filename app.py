@@ -884,7 +884,7 @@ def render_team_room(team_id: str) -> None:
             # Seat positions tuned for the new office background (room-wrap ~720x480)
             # 4 seats around the central 4-monitor desk.
             seats = [
-                {"rid": "coordinator", "x": 315, "y": 165},
+                {"rid": "coordinator", "x": 315, "y": 182},  # move down a bit
                 {"rid": "coder", "x": 205, "y": 258},
                 {"rid": "reviewer", "x": 445, "y": 258},
                 {"rid": "integrator", "x": 330, "y": 310},
@@ -963,25 +963,22 @@ def render_team_room(team_id: str) -> None:
   .glow{position:absolute;left:8px;top:46px;width:160px;height:92px;border-radius:20px;filter:blur(16px);opacity:.26;pointer-events:none;}
 
   /* Avatar */
-  .avatar{position:absolute;left:58px;top:36px;width:80px;height:80px;z-index:5;cursor:pointer;
+  .avatar{position:absolute;left:64px;top:46px;width:68px;height:68px;z-index:5;cursor:pointer;
           display:flex;align-items:center;justify-content:center;
           border-radius:999px;
           background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.45), rgba(255,255,255,.10));
           border: 1px solid rgba(15,23,42,.12);
-          box-shadow: 0 18px 40px rgba(0,0,0,.22);
+          box-shadow: 0 16px 34px rgba(0,0,0,.20);
           overflow:hidden;
+          will-change: transform;
         }
   .avatar:hover{filter: drop-shadow(0 0 18px rgba(168,85,247,.45)) drop-shadow(0 0 18px rgba(59,130,246,.35));}
   .avatar .fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
           opacity:.98;}
 
-  /* Idle / Working motion */
-  @keyframes wander {0%{transform:translate(0,0)}25%{transform:translate(8px,-4px)}50%{transform:translate(-7px,5px)}75%{transform:translate(6px,8px)}100%{transform:translate(0,0)}}
-  @keyframes floaty {0%{transform:translate(0,0)}50%{transform:translate(0,-4px)}100%{transform:translate(0,0)}}
-  @keyframes workbob {0%{transform:translate(0,0)}50%{transform:translate(0,-3px)}100%{transform:translate(0,0)}}
-  .avatar.floaty{animation:floaty 1.6s ease-in-out infinite;}
-  .avatar.idleWander{animation:wander 3.2s ease-in-out infinite;}
-  .avatar.workingBob{animation:workbob 0.9s ease-in-out infinite;}
+  /* Base bobbing (kept subtle, main movement now driven by JS roaming) */
+  @keyframes floaty {0%{transform:translateY(0)}50%{transform:translateY(-3px)}100%{transform:translateY(0)}}
+  .avatar.floaty{animation:floaty 1.8s ease-in-out infinite;}
 
   .label{position:absolute;left:10px;top:6px;font:12px/1.2 sans-serif;color:#0f172a;opacity:.95;
          background:rgba(255,255,255,.75);padding:3px 8px;border-radius:12px;border:1px solid rgba(15,23,42,.10)}
@@ -1020,8 +1017,9 @@ function mkSeat(s){
   avatar.classList.add('floaty');
   // phase offsets so they don't move in sync
   avatar.style.animationDelay = (Math.random()*0.8).toFixed(2) + 's';
-  if (!s.task) { avatar.classList.add('idleWander'); }
-  if (s.status === 'Working') { avatar.classList.add('workingBob'); }
+  // movement state (JS roaming)
+  avatar.dataset.status = s.status || 'Idle';
+  avatar.dataset.rid = s.rid;
 
   // Use provided cartoon role images
   if (s.avatar) {
@@ -1060,7 +1058,73 @@ function mkSeat(s){
   return d;
 }
 
-seats.forEach(s=> overlay.appendChild(mkSeat(s)) );
+const nodes = {};
+seats.forEach(s=> { nodes[s.rid] = overlay.appendChild(mkSeat(s)); });
+
+// --- Roaming / meeting animation ---
+const avatars = {};
+for (const rid in nodes) {
+  const a = nodes[rid].querySelector('.avatar');
+  if (a) avatars[rid] = a;
+}
+
+const state = {};
+function init(rid){
+  state[rid] = {x:0,y:0, tx:0, ty:0};
+}
+Object.keys(avatars).forEach(init);
+
+function setTarget(rid, tx, ty){
+  const s = state[rid];
+  if(!s) return;
+  s.tx = tx; s.ty = ty;
+}
+
+function randomIn(min,max){ return min + Math.random()*(max-min); }
+
+function chooseTargets(){
+  const idle = [];
+  const busy = [];
+  for (const rid in avatars){
+    const st = avatars[rid].dataset.status || 'Idle';
+    if (st === 'Working' || st === 'Planning') busy.push(rid);
+    else idle.push(rid);
+  }
+
+  // Busy: small jitter near seat
+  busy.forEach(rid => setTarget(rid, randomIn(-4,4), randomIn(-3,3)));
+
+  // Idle: sometimes meet in pairs, otherwise roam
+  if (idle.length >= 2 && Math.random() < 0.55){
+    // pick two different
+    const a = idle[Math.floor(Math.random()*idle.length)];
+    let b = a;
+    while(b===a) b = idle[Math.floor(Math.random()*idle.length)];
+    // move them close to each other (small offsets)
+    setTarget(a, randomIn(-10,-4), randomIn(-6,6));
+    setTarget(b, randomIn(4,10), randomIn(-6,6));
+    // rest roam
+    idle.filter(r=>r!==a && r!==b).forEach(rid => setTarget(rid, randomIn(-14,14), randomIn(-10,10)));
+  } else {
+    idle.forEach(rid => setTarget(rid, randomIn(-16,16), randomIn(-12,12)));
+  }
+}
+
+chooseTargets();
+setInterval(chooseTargets, 3200);
+
+function tick(){
+  for (const rid in avatars){
+    const s = state[rid];
+    if(!s) continue;
+    // ease
+    s.x += (s.tx - s.x) * 0.05;
+    s.y += (s.ty - s.y) * 0.05;
+    avatars[rid].style.transform = `translate(${s.x.toFixed(2)}px, ${s.y.toFixed(2)}px)`;
+  }
+  requestAnimationFrame(tick);
+}
+tick();
 </script>
 </body></html>
 """

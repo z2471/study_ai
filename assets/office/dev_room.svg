@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="650" viewBox="0 0 900 650" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Cute isometric office room (hand-drawn-ish, pastel). Custom-made. -->
+  <defs>
+    <linearGradient id="floorGrad" x1="130" y1="240" x2="760" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7FAFF"/>
+      <stop offset="1" stop-color="#E6EEFF"/>
+    </linearGradient>
+    <linearGradient id="wallBack" x1="170" y1="80" x2="720" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF6E9"/>
+      <stop offset="1" stop-color="#FFE7F3"/>
+    </linearGradient>
+    <linearGradient id="wallLeft" x1="120" y1="130" x2="220" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F2F6FF"/>
+      <stop offset="1" stop-color="#E9E6FF"/>
+    </linearGradient>
+    <filter id="softShadow" x="0" y="0" width="900" height="650" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!-- Room base -->
+  <g filter="url(#softShadow)">
+    <!-- back wall -->
+    <path d="M235 78 L700 78 L770 220 L305 220 Z" fill="url(#wallBack)" stroke="#B9C7FF" stroke-width="3" stroke-linejoin="round"/>
+    <!-- left wall -->
+    <path d="M235 78 L305 220 L305 500 L235 355 Z" fill="url(#wallLeft)" stroke="#B9C7FF" stroke-width="3" stroke-linejoin="round"/>
+    <!-- floor -->
+    <path d="M305 220 L770 220 L685 560 L220 560 Z" fill="url(#floorGrad)" stroke="#B9C7FF" stroke-width="3" stroke-linejoin="round"/>
+
+    <!-- floor planks -->
+    <g opacity="0.22" stroke="#6B7FD6" stroke-width="2">
+      <path d="M310 250 L760 250"/>
+      <path d="M300 285 L753 285"/>
+      <path d="M292 320 L745 320"/>
+      <path d="M283 356 L738 356"/>
+      <path d="M274 392 L730 392"/>
+      <path d="M266 428 L722 428"/>
+      <path d="M258 464 L714 464"/>
+      <path d="M250 500 L706 500"/>
+      <path d="M242 536 L698 536"/>
+    </g>
+
+    <!-- decor: plant -->
+    <g>
+      <path d="M645 270 C640 250 655 238 667 250 C678 232 702 242 694 262 C715 260 714 289 690 286 C690 306 664 308 662 292 C645 300 626 286 645 270 Z" fill="#9AE6B4" stroke="#2F855A" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M646 316 L704 316 L693 356 L635 356 Z" fill="#FFD6A5" stroke="#B7791F" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+
+    <!-- decor: whiteboard -->
+    <g>
+      <path d="M360 110 L640 110 L675 190 L395 190 Z" fill="#FFFFFF" stroke="#7C8CE6" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M392 142 L612 142" stroke="#CBD5E1" stroke-width="4" stroke-linecap="round"/>
+      <path d="M410 165 L590 165" stroke="#CBD5E1" stroke-width="4" stroke-linecap="round"/>
+    </g>
+
+    <!-- 4 desks (simple cute blocks) -->
+    <g stroke="#7C8CE6" stroke-width="3" stroke-linejoin="round">
+      <!-- top-left -->
+      <path d="M345 250 L470 250 L455 300 L330 300 Z" fill="#E0F2FE"/>
+      <path d="M372 225 L437 225 L450 250 L385 250 Z" fill="#0F172A" opacity="0.9"/>
+      <!-- top-right -->
+      <path d="M555 250 L680 250 L665 300 L540 300 Z" fill="#E9D5FF"/>
+      <path d="M582 225 L647 225 L660 250 L595 250 Z" fill="#0F172A" opacity="0.9"/>
+      <!-- bottom-left -->
+      <path d="M320 420 L445 420 L430 470 L305 470 Z" fill="#DCFCE7"/>
+      <path d="M347 395 L412 395 L425 420 L360 420 Z" fill="#0F172A" opacity="0.9"/>
+      <!-- bottom-right -->
+      <path d="M530 420 L655 420 L640 470 L515 470 Z" fill="#FFE4E6"/>
+      <path d="M557 395 L622 395 L635 420 L570 420 Z" fill="#0F172A" opacity="0.9"/>
+
+      <!-- chairs -->
+      <path d="M395 312 L445 312 L438 340 L388 340 Z" fill="#CBD5E1"/>
+      <path d="M605 312 L655 312 L648 340 L598 340 Z" fill="#CBD5E1"/>
+      <path d="M370 482 L420 482 L413 510 L363 510 Z" fill="#CBD5E1"/>
+      <path d="M580 482 L630 482 L623 510 L573 510 Z" fill="#CBD5E1"/>
+    </g>
+  </g>
+
+  <!-- Notes: seat overlay positions should align with these desk regions -->
+</svg>

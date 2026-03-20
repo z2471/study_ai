@@ -876,11 +876,12 @@ def render_team_room(team_id: str) -> None:
         show_scene = (team_id == "team_default")
         if show_scene:
             # Map the 4 dev roles into 4 seats.
+            # Seat positions tuned for the cute isometric background (room-wrap ~620x460)
             seats = [
-                {"rid": "coordinator", "x": 40, "y": 55},
-                {"rid": "coder", "x": 240, "y": 55},
-                {"rid": "reviewer", "x": 40, "y": 230},
-                {"rid": "integrator", "x": 240, "y": 230},
+                {"rid": "coordinator", "x": 180, "y": 155},
+                {"rid": "coder", "x": 380, "y": 155},
+                {"rid": "reviewer", "x": 155, "y": 315},
+                {"rid": "integrator", "x": 355, "y": 315},
             ]
 
             lottie_js = _lottie_js()
@@ -930,92 +931,42 @@ def render_team_room(team_id: str) -> None:
                     }
                 )
 
+            # Cute isometric office background (vendored)
+            bg_svg = (ROOT / "assets" / "office" / "dev_room.svg").read_text(encoding="utf-8")
+
             scene_html = """
 <!doctype html><html><head><meta charset='utf-8'/>
 <style>
   body{margin:0;background:transparent;}
-  .room-wrap{width:520px;height:420px;}
-  .room{position:relative;width:520px;height:420px;perspective:980px;}
+  .room-wrap{width:620px;height:460px;position:relative;}
+  .bg{position:absolute;inset:0;}
+  .bg svg{width:100%;height:100%;}
+  .overlay{position:absolute;inset:0;}
 
-  /* Cyber-glass / neon office theme (more "炫") */
-  .floor{position:absolute;inset:0;
-        background:
-          radial-gradient(800px 380px at 30% 60%, rgba(168,85,247,.40), transparent 60%),
-          radial-gradient(700px 340px at 80% 70%, rgba(59,130,246,.40), transparent 55%),
-          linear-gradient(135deg,#0b1020 0%,#0a1630 50%,#081225 100%);
-        transform:rotateX(58deg) translateY(96px);
-        transform-origin:top;
-        border-radius:18px;
-        box-shadow: 0 40px 90px rgba(0,0,0,.45);
-  }
-  .wall.back{position:absolute;left:0;right:0;top:0;height:150px;
-        background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.06));
-        border-radius:18px 18px 0 0;
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
-  }
-  .wall.left{position:absolute;left:0;top:0;bottom:0;width:120px;
-        background:linear-gradient(90deg,rgba(255,255,255,.12),rgba(255,255,255,.04));
-        border-radius:18px 0 0 18px;
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
-  }
-  @keyframes lightSweep {0%{transform:rotateX(58deg) translateY(96px) translateX(-60px)}100%{transform:rotateX(58deg) translateY(96px) translateX(60px)}}
-  .light{position:absolute;inset:-40px;pointer-events:none;
-        background:linear-gradient(90deg,transparent,rgba(255,255,255,.10),transparent);
-        filter: blur(12px);
-        opacity:.35;
-        transform:rotateX(58deg) translateY(96px);
-        animation: lightSweep 4.5s ease-in-out infinite alternate;
-        border-radius:18px;
-  }
-  .seat{position:absolute;width:170px;height:170px;}
-  .desk{position:absolute;left:24px;top:64px;width:126px;height:44px;
-        background:linear-gradient(135deg,rgba(255,255,255,.18),rgba(255,255,255,.06));
-        border:1px solid rgba(255,255,255,.14);
-        border-radius:14px;
-        transform:skewX(-12deg);
-        box-shadow:0 18px 30px rgba(0,0,0,.28);
-  }
-  .chair{position:absolute;left:66px;top:112px;width:52px;height:30px;
-         background:linear-gradient(135deg,rgba(59,130,246,.25),rgba(168,85,247,.18));
-         border:1px solid rgba(255,255,255,.10);
-         border-radius:12px;
-         transform:skewX(-12deg);
-         opacity:.98;}
-  @keyframes screenGlow {0%{box-shadow:0 0 0 2px rgba(255,255,255,.10) inset,0 0 10px rgba(59,130,246,.08)}50%{box-shadow:0 0 0 2px rgba(255,255,255,.12) inset,0 0 16px rgba(168,85,247,.12)}100%{box-shadow:0 0 0 2px rgba(255,255,255,.10) inset,0 0 10px rgba(59,130,246,.08)}}
-  .monitor{position:absolute;left:44px;top:42px;width:68px;height:36px;
-           background:linear-gradient(135deg,#0b1220,#0a1630);
-           border-radius:10px;
-           animation: screenGlow 2.4s ease-in-out infinite;}
-  .glow{position:absolute;left:10px;top:40px;width:150px;height:92px;border-radius:18px;filter:blur(16px);opacity:.30;}
-  .avatar{position:absolute;left:92px;top:92px;width:80px;height:80px;z-index:5;cursor:pointer;
+  /* Seat overlay positioned over the background */
+  .seat{position:absolute;width:160px;height:160px;}
+  .glow{position:absolute;left:10px;top:40px;width:150px;height:92px;border-radius:18px;filter:blur(16px);opacity:.25;pointer-events:none;}
+  .avatar{position:absolute;left:72px;top:68px;width:76px;height:76px;z-index:5;cursor:pointer;
           filter: drop-shadow(0 10px 18px rgba(0,0,0,.25));}
-  /* remove the round "badge" so the character itself is visible */
-  .avatar::before{content:'';position:absolute;inset:-2px;border-radius:16px;
-    background: transparent;
-  }
-  .avatar > svg, .avatar > div, .avatar > canvas { position:relative; z-index:2; }
   .avatar:hover{filter: drop-shadow(0 0 14px rgba(168,85,247,.45)) drop-shadow(0 0 14px rgba(59,130,246,.35));}
+  .label{position:absolute;left:10px;top:6px;font:12px/1.2 sans-serif;color:#0f172a;opacity:.95;
+         background:rgba(255,255,255,.70);padding:2px 6px;border-radius:10px;border:1px solid rgba(15,23,42,.10)}
 
-  .label{position:absolute;left:12px;top:8px;font:12px/1.2 sans-serif;color:#e5e7eb;opacity:.95;}
   .tip{position:absolute;display:none;z-index:20;max-width:260px;background:rgba(17,24,39,.92);color:#e5e7eb;
        border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px 10px;font:12px/1.4 sans-serif;box-shadow:0 18px 40px rgba(0,0,0,.35);}
 </style>
 </head><body>
 <div class='room-wrap'>
-  <div class='room' id='room'>
-    <div class='wall back'></div>
-    <div class='wall left'></div>
-    <div class='floor'></div>
-    <div class='light'></div>
+  <div class='bg'>
+""" + bg_svg + """
   </div>
+  <div class='overlay' id='overlay'></div>
   <div class='tip' id='tip'></div>
 </div>
 <script>
 """ + lottie_js + """
 const seats = """ + json.dumps(seat_divs, ensure_ascii=False) + """;
-const room = document.getElementById('room');
+const overlay = document.getElementById('overlay');
 const tip = document.getElementById('tip');
 
 function mkSeat(s){
@@ -1023,7 +974,6 @@ function mkSeat(s){
   d.className='seat';
   d.style.left=s.x+'px';
   d.style.top=s.y+'px';
-  d.dataset.rid=s.rid;
 
   const label=document.createElement('div');
   label.className='label';
@@ -1033,21 +983,17 @@ function mkSeat(s){
   glow.className='glow';
   glow.style.background=s.color;
 
-  const monitor=document.createElement('div'); monitor.className='monitor';
-  const desk=document.createElement('div'); desk.className='desk';
-  const chair=document.createElement('div'); chair.className='chair';
-
   const avatar=document.createElement('div'); avatar.className='avatar';
 
-  d.appendChild(glow); d.appendChild(monitor); d.appendChild(desk); d.appendChild(chair); d.appendChild(avatar); d.appendChild(label);
+  d.appendChild(glow);
+  d.appendChild(avatar);
+  d.appendChild(label);
 
-  // lottie
   try{
     const animData = s.anim;
     window.lottie.loadAnimation({container: avatar, renderer:'svg', loop:true, autoplay:true, animationData: animData});
   }catch(e){}
 
-  // Hover should be on the avatar (person), not the whole seat.
   avatar.addEventListener('mousemove', (ev)=>{
     tip.style.display='block';
     tip.style.left=(ev.pageX+12)+'px';
@@ -1059,7 +1005,7 @@ function mkSeat(s){
   return d;
 }
 
-seats.forEach(s=> room.appendChild(mkSeat(s)) );
+seats.forEach(s=> overlay.appendChild(mkSeat(s)) );
 </script>
 </body></html>
 """

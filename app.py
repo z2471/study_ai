@@ -512,6 +512,9 @@ def render_team_room() -> None:
     ws = load_worker_state(TEAM_PATHS)
     w_status = ws.get("status", "?")
     w_current = ws.get("current")
+    q = read_queue(TEAM_PATHS, limit=200)
+    queued = [t for t in q if isinstance(t, dict) and t.get("status") in (None, "queued")]
+    st.caption(f"队列：待执行 {len(queued)} 个")
     if w_status == "Running":
         st.info(f"Worker：Running | 当前任务：{w_current}")
     else:
@@ -582,8 +585,14 @@ def render_team_room() -> None:
         for rid in ["coordinator", "coder", "reviewer", "integrator"]:
             s = agent_state.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}
             with st.container(border=True):
-                st.markdown(f"**{s.get('name', rid)}**")
-                st.caption(f"状态：{s.get('status','')}  |  Round: {s.get('round','-')}")
+                name = s.get('name', rid)
+                status = s.get('status','')
+                if status == 'Working':
+                    name = '🟦 ' + name
+                elif status == 'Planning':
+                    name = '🟨 ' + name
+                st.markdown(f"**{name}**")
+                st.caption(f"状态：{status}  |  Round: {s.get('round','-')}  | 更新：{s.get('updated_at','-')}")
                 if s.get("task"):
                     st.markdown(f"任务：{s['task']}")
                 if s.get("last"):
@@ -648,8 +657,24 @@ def render_team_room() -> None:
                     rnd = m.get("round") or "-"
                     mid_ = m.get("id")
                     with st.container(border=True):
-                        st.markdown(title)
-                        st.caption(f"owner: {owner} | round: {rnd}")
+                        badge = ""
+                        if m.get("status") == "Running":
+                            badge = "🟦 "
+                        elif m.get("status") == "Completed":
+                            badge = "✅ "
+                        elif m.get("status") == "Failed":
+                            badge = "🟥 "
+                        st.markdown(badge + title)
+                        # show elapsed if available
+                        es = m.get("elapsed_sec")
+                        esl = m.get("elapsed_sec_live")
+                        if isinstance(es, (int, float)):
+                            ttxt = f"{int(es)}s"
+                        elif isinstance(esl, (int, float)) and m.get("status") == "Running":
+                            ttxt = f"{int(esl)}s"
+                        else:
+                            ttxt = "-"
+                        st.caption(f"owner: {owner} | round: {rnd} | t: {ttxt}")
                         if m.get("status") == "Failed" and m.get("error_summary"):
                             st.error(str(m.get("error_summary"))[:200])
                         # "Jump" behavior: filter/highlight related timeline events.

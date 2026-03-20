@@ -934,15 +934,25 @@ def render_team_room(team_id: str) -> None:
                         "updated": updated,
                         "status": status,
                         "color": color,
-                        "anim": anims[st_key],
+                        "avatar": avatar_map.get(rid),
                     }
                 )
 
-            # Cute isometric office background (vendored image from user)
+            # Cute isometric office background + role avatars (vendored)
             import base64
             bg_path = ROOT / "assets" / "office" / "dev_room_bg.jpg"
             bg_b64 = base64.b64encode(_read_bytes(bg_path)).decode("ascii")
             bg_data_url = "data:image/jpeg;base64," + bg_b64
+
+            def _b64_img(p: Path) -> str:
+                return "data:image/jpeg;base64," + base64.b64encode(_read_bytes(p)).decode("ascii")
+
+            avatar_map = {
+                "coordinator": _b64_img(ROOT / "assets" / "office" / "avatars" / "coordinator.jpg"),
+                "coder": _b64_img(ROOT / "assets" / "office" / "avatars" / "coder.jpg"),
+                "reviewer": _b64_img(ROOT / "assets" / "office" / "avatars" / "reviewer.jpg"),
+                "integrator": _b64_img(ROOT / "assets" / "office" / "avatars" / "integrator.jpg"),
+            }
 
             scene_html = """
 <!doctype html><html><head><meta charset='utf-8'/>
@@ -991,7 +1001,6 @@ def render_team_room(team_id: str) -> None:
   <div class='tip' id='tip'></div>
 </div>
 <script>
-""" + lottie_js + """
 const seats = """ + json.dumps(seat_divs, ensure_ascii=False) + """;
 const overlay = document.getElementById('overlay');
 const tip = document.getElementById('tip');

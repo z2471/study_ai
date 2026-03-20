@@ -495,13 +495,17 @@ def render_team_room() -> None:
                 TEAM_PATHS.mission_board.unlink()
             st.rerun()
 
-    # Right side: Office + Mission
-    left, right = st.columns([2, 1])
+    # Layout: Mission board large, Office as side panel, Timeline on the left.
+    # Three-column layout works better for demo screens.
+    left, mid, right = st.columns([2, 2, 1])
+
+    # Selection state for "jump to timeline"
+    if "team_selected_mission" not in st.session_state:
+        st.session_state.team_selected_mission = None
 
     with right:
         st.markdown("### 办公室大屏")
         agent_state = load_json(TEAM_PATHS.agent_state, default=init_agent_state(role_ids, roles))
-        # Render as cards
         for rid in ["coordinator", "coder", "reviewer", "integrator"]:
             s = agent_state.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}
             with st.container(border=True):
@@ -513,12 +517,47 @@ def render_team_room() -> None:
                     st.caption("最近输出：")
                     st.code(str(s.get("last"))[-600:], language="markdown")
 
+    with mid:
         st.markdown("### Mission 看板")
         board = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
-        current = (board.get("missions") or {}).get("current") or {}
+        missions = list((board.get("missions") or {}).values())
+        main = (board.get("missions") or {}).get("mission:main") or {}
+
+        # Main mission header
         with st.container(border=True):
-            st.markdown(f"**当前任务**：{current.get('title','(none)')}")
-            st.caption(f"状态：{current.get('status','(none)')}  | 开始：{current.get('started_at','-')}  | 结束：{current.get('finished_at','-')}")
+            st.markdown(f"**主任务**：{main.get('title','(none)')}")
+            st.caption(
+                f"状态：{main.get('status','(none)')}  | 开始：{main.get('started_at','-')}  | 结束：{main.get('finished_at','-')}"
+            )
+
+        def _by_status(wanted: str) -> list[dict]:
+            return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
+
+        lanes = [
+            ("Backlog", "待办"),
+            ("Running", "执行中"),
+            ("Completed", "完成"),
+            ("Failed", "失败"),
+        ]
+        cols = st.columns(4)
+        for col, (status, label) in zip(cols, lanes):
+            with col:
+                st.markdown(f"**{label}**")
+                items = _by_status(status)
+                if not items:
+                    st.caption("（空）")
+                for m in items[:30]:
+                    title = m.get("title") or m.get("id")
+                    owner = m.get("owner") or "-"
+                    rnd = m.get("round") or "-"
+                    mid_ = m.get("id")
+                    with st.container(border=True):
+                        st.markdown(title)
+                        st.caption(f"owner: {owner} | round: {rnd}")
+                        # "Jump" behavior: filter/highlight related timeline events.
+                        if mid_:
+                            if st.button("定位到时间线", key=f"jump_{mid_}"):
+                                st.session_state.team_selected_mission = mid_
 
     with left:
         st.markdown("### 时间线（完整日志）")
@@ -526,16 +565,30 @@ def render_team_room() -> None:
 
         def render_timeline() -> None:
             evts = read_jsonl(TEAM_PATHS.event_log, limit=TEAM_EVENTS_LIMIT)
+            selected_mid = st.session_state.get("team_selected_mission")
+
             with timeline_box:
+                if selected_mid:
+                    st.info(f"已定位：{selected_mid}（仅高亮/展示相关事件）")
+                    if st.button("清除定位", key="clear_jump"):
+                        st.session_state.team_selected_mission = None
+                        st.rerun()
+
                 for e in evts:
                     speaker_name = e.get("speaker_name") or e.get("speaker")
                     typ = e.get("type")
                     ts = e.get("ts")
                     rnd = e.get("round")
+                    meta = e.get("meta") or {}
+                    mid = meta.get("mission_id")
+
+                    if selected_mid and mid != selected_mid:
+                        # Show only related events when a mission is selected.
+                        continue
+
                     header = f"[{typ}] {speaker_name}  (round {rnd})\n{ts}" if rnd else f"[{typ}] {speaker_name}\n{ts}"
                     with st.chat_message("assistant"):
                         st.caption(header)
-                        # full content
                         st.markdown(e.get("content", ""))
 
         render_timeline()
@@ -557,12 +610,23 @@ def render_team_room() -> None:
             office_live = st.empty()
             mission_live = st.empty()
 
+            # Keep the selection stable during execution
+            if "team_selected_mission" not in st.session_state:
+                st.session_state.team_selected_mission = None
+
             # Throttle UI refresh to keep Streamlit stable.
             refresh_every_sec = 0.8
             last_refresh = 0.0
 
             def render_office_mission() -> None:
                 agent_state_live = load_json(TEAM_PATHS.agent_state, default=init_agent_state(role_ids, roles))
+                board_live = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
+                missions = list((board_live.get("missions") or {}).values())
+                main = (board_live.get("missions") or {}).get("mission:main") or {}
+
+                def _by_status(wanted: str) -> list[dict]:
+                    return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
+
                 with office_live.container():
                     st.markdown("### 办公室大屏（实时）")
                     for rid in ["coordinator", "coder", "reviewer", "integrator"]:
@@ -575,14 +639,6 @@ def render_team_room() -> None:
                             if s.get("last"):
                                 st.caption("最近输出：")
                                 st.code(str(s.get("last"))[-600:], language="markdown")
-
-                board_live = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
-                missions = list((board_live.get("missions") or {}).values())
-
-                def _by_status(wanted: str) -> list[dict]:
-                    return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
-
-                main = (board_live.get("missions") or {}).get("mission:main") or {}
 
                 with mission_live.container():
                     st.markdown("### Mission 看板（实时）")
@@ -602,24 +658,42 @@ def render_team_room() -> None:
                     for col, (status, label) in zip(cols, lanes):
                         with col:
                             st.markdown(f"**{label}**")
-                            for m in _by_status(status)[:20]:
+                            items = _by_status(status)
+                            if not items:
+                                st.caption("（空）")
+                            for m in items[:30]:
                                 title = m.get("title") or m.get("id")
                                 owner = m.get("owner") or "-"
                                 rnd = m.get("round") or "-"
+                                mid_ = m.get("id")
                                 with st.container(border=True):
                                     st.markdown(title)
                                     st.caption(f"owner: {owner} | round: {rnd}")
+                                    if mid_ and st.button("定位到时间线", key=f"jump_live_{mid_}"):
+                                        st.session_state.team_selected_mission = mid_
 
             def render_timeline_live() -> None:
                 evts = read_jsonl(TEAM_PATHS.event_log, limit=TEAM_EVENTS_LIMIT)
+                selected_mid = st.session_state.get("team_selected_mission")
                 with timeline_live.container():
                     st.markdown("### 时间线（完整日志，实时）")
-                    # Render newest at bottom
+                    if selected_mid:
+                        st.info(f"已定位：{selected_mid}（仅展示相关事件）")
+                        if st.button("清除定位", key="clear_jump_live"):
+                            st.session_state.team_selected_mission = None
+                            st.rerun()
+
                     for e in evts:
                         speaker_name = e.get("speaker_name") or e.get("speaker")
                         typ = e.get("type")
                         ts = e.get("ts")
                         rnd = e.get("round")
+                        meta = e.get("meta") or {}
+                        mid = meta.get("mission_id")
+
+                        if selected_mid and mid != selected_mid:
+                            continue
+
                         header = f"[{typ}] {speaker_name}  (round {rnd})\n{ts}" if rnd else f"[{typ}] {speaker_name}\n{ts}"
                         with st.chat_message("assistant"):
                             st.caption(header)

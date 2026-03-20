@@ -98,17 +98,23 @@ def ensure_registry_and_migrate_default() -> None:
         # Keep legacy files in place (non-destructive).
 
 
-def load_roles() -> dict:
-    with open(ROOT / "roles.json", "r", encoding="utf-8") as f:
+def load_roles(path: Path | None = None) -> dict:
+    p = path or (ROOT / "roles.json")
+    with open(p, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def history_path(role_id: str) -> Path:
-    return HISTORY_DIR / f"{role_id}.jsonl"
+def roles_path_for_team(tp: TeamPaths) -> Path:
+    p = tp.history_dir / "roles.json"
+    return p if p.exists() else (ROOT / "roles.json")
 
 
-def read_history(role_id: str) -> list[dict]:
-    p = history_path(role_id)
+def history_path(role_id: str, base_dir: Path = HISTORY_DIR) -> Path:
+    return base_dir / f"{role_id}.jsonl"
+
+
+def read_history(role_id: str, base_dir: Path = HISTORY_DIR) -> list[dict]:
+    p = history_path(role_id, base_dir=base_dir)
     if not p.exists():
         return []
     msgs: list[dict] = []
@@ -121,14 +127,14 @@ def read_history(role_id: str) -> list[dict]:
     return msgs
 
 
-def append_history(role_id: str, msg: dict) -> None:
-    p = history_path(role_id)
+def append_history(role_id: str, msg: dict, base_dir: Path = HISTORY_DIR) -> None:
+    p = history_path(role_id, base_dir=base_dir)
     with open(p, "a", encoding="utf-8") as f:
         f.write(json.dumps(msg, ensure_ascii=False) + "\n")
 
 
-def clear_history(role_id: str) -> None:
-    p = history_path(role_id)
+def clear_history(role_id: str, base_dir: Path = HISTORY_DIR) -> None:
+    p = history_path(role_id, base_dir=base_dir)
     if p.exists():
         p.unlink()
 
@@ -329,22 +335,27 @@ def run_orchestrator(
         )
         emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_START", content=f"任务开始：{user_goal.strip()}", cb=on_event)
 
+    # Allow dynamic role ids per team. coordinator is the orchestrator; others are callable roles.
+    callable_roles = [rid for rid in roles.keys() if rid != "coordinator"]
     coordinator_instruction = (
         "你要作为 Orchestrator 自动调度团队完成用户目标。\n"
         "你可以在每一轮输出一个 JSON 指令块（必须是严格 JSON），格式如下：\n\n"
         "{\n"
         "  \"round_goal\": \"本轮要达成什么\",\n"
         "  \"calls\": [\n"
-        "    {\"to\": \"coder\"|\"reviewer\"|\"integrator\", \"task\": \"给该角色的具体指令\"}\n"
+        "    {\"to\": \"<ROLE_ID>\", \"task\": \"给该角色的具体指令\"}\n"
         "  ],\n"
         "  \"need_changes\": true|false,\n"
         "  \"done\": true|false\n"
         "}\n\n"
+        "可用角色 ROLE_ID 列表：\n- "
+        + "\n- ".join(callable_roles)
+        + "\n\n"
         "规则：\n"
         "- done=true 表示已经达到验收标准并停止。\n"
-        "- need_changes=true 表示下一步需要产出代码/文件变更（通常让 integrator 产出变更包）。\n"
+        "- need_changes=true 表示下一步需要产出文件变更（如需要写入仓库文件，通常让交付/集成角色产出变更包）。\n"
         "- 你必须以 ```json ...``` 包裹 JSON。\n"
-        "- 在给 integrator 的 task 里，要求它如果要改代码，输出一个严格 JSON：\n"
+        "- 如果某个角色需要写入仓库文件，请让它输出一个严格 JSON：\n"
         "  {\"files\":[{\"path\":\"相对路径\",\"content\":\"全文\"}],\"commands\":[...],\"commit_message\":\"...\"}\n"
         "- 所有路径必须是仓库内相对路径，不允许删除文件。\n"
         "- 每轮要参考最新 repo 快照和上一轮角色反馈，避免反复。\n"
@@ -364,7 +375,7 @@ def run_orchestrator(
                 emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_STOP_REQUESTED", content="检测到 stop_requested=true，已停止当前任务。", round=r, meta={"mission_id": mission_id}, cb=on_event)
                 return "\n\n".join(transcript)
 
-        coord_history = read_history("coordinator")[-20:]
+        coord_history = read_history("coordinator", base_dir=team_paths.history_dir if team_paths is not None else HISTORY_DIR)[-20:]
 
         coord_user = (
             f"用户目标：\n{user_goal.strip()}\n\n"
@@ -421,7 +432,7 @@ def run_orchestrator(
                 update_agent_state(team_paths, call.to, status="Working", task=call.task, round=r)
                 emit_event(team_paths, speaker=call.to, speaker_name=roles[call.to]["name"], type="START", content="开始执行。", round=r, meta={"mission_id": mid}, cb=on_event)
 
-            h = read_history(call.to)[-30:]
+            h = read_history(call.to, base_dir=team_paths.history_dir if team_paths is not None else HISTORY_DIR)[-30:]
             reply = call_role(call.to, roles, h, call.task, model=model)
             transcript.append(f"**→ {roles[call.to]['name']}**\n\n{reply}")
             loop_notes.append(f"Round {r} {call.to} reply:\n{reply}")
@@ -525,7 +536,9 @@ st.title("AI 开发团队管理台")
 
 ensure_registry_and_migrate_default()
 
-roles = load_roles()
+# Load roles for the currently selected team
+_tp0 = team_paths(current_team)
+roles = load_roles(roles_path_for_team(_tp0))
 role_ids = list(roles.keys())
 
 # Query params: team_id
@@ -605,7 +618,8 @@ with st.sidebar:
 
     st.divider()
     if st.button("清空当前角色对话记录", type="secondary"):
-        clear_history(role_id)
+        _tp_single = team_paths(selected_team)
+        clear_history(role_id, base_dir=_tp_single.history_dir)
         st.rerun()
 
 
@@ -666,6 +680,9 @@ def render_hub(selected_team: str) -> None:
 
 def render_team_room(team_id: str) -> None:
     tp = team_paths(team_id)
+    # Team-specific roles
+    roles = load_roles(roles_path_for_team(tp))
+    role_ids = list(roles.keys())
     st.subheader(f"团队面板：{team_id}")
 
     # Controls
@@ -788,7 +805,10 @@ def render_team_room(team_id: str) -> None:
     with right:
         st.markdown("### 办公室大屏")
         agent_state = load_json(tp.agent_state, default=init_agent_state(role_ids, roles))
-        for rid in ["coordinator", "coder", "reviewer", "integrator"]:
+        for rid in role_ids:
+            # Only show assistant roles (skip any user/system if present)
+            if rid not in roles:
+                continue
             s = agent_state.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}
             with st.container(border=True):
                 name = s.get('name', rid)
@@ -1051,7 +1071,9 @@ if not (gateway_token_present or api_key_present):
         icon="⚠️",
     )
 
-history = read_history(role_id)
+# Single-role chat uses the selected team's history directory
+_tp_single = team_paths(selected_team)
+history = read_history(role_id, base_dir=_tp_single.history_dir)
 
 # Render history
 for m in history:
@@ -1095,7 +1117,8 @@ if role_id == "coordinator":
 
 if prompt:
     user_msg = {"role": "user", "content": prompt, "ts": datetime.utcnow().isoformat()}
-    append_history(role_id, user_msg)
+    _tp_single = team_paths(selected_team)
+    append_history(role_id, user_msg, base_dir=_tp_single.history_dir)
 
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -1131,13 +1154,15 @@ if prompt:
                 "ts": datetime.utcnow().isoformat(),
                 "model": model,
             }
-            append_history(role_id, assistant_msg)
+            _tp_single = team_paths(selected_team)
+            append_history(role_id, assistant_msg, base_dir=_tp_single.history_dir)
         else:
             client = get_client()
 
             # Compose messages: system + role history (without ts)
             messages = [{"role": "system", "content": role["system"]}]
-            for m in read_history(role_id):
+            _tp_single = team_paths(selected_team)
+            for m in read_history(role_id, base_dir=_tp_single.history_dir):
                 if m.get("role") in ("user", "assistant"):
                     messages.append({"role": m["role"], "content": m.get("content", "")})
 
@@ -1156,4 +1181,5 @@ if prompt:
                 "ts": datetime.utcnow().isoformat(),
                 "model": model,
             }
-            append_history(role_id, assistant_msg)
+            _tp_single = team_paths(selected_team)
+            append_history(role_id, assistant_msg, base_dir=_tp_single.history_dir)

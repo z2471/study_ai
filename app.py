@@ -534,7 +534,8 @@ def apply_file_writes(files: list[dict]) -> list[str]:
 st.set_page_config(page_title="AI 开发团队管理台", layout="wide")
 st.title("AI 开发团队管理台")
 
-# --- UI animations (offline, CSS-based) ---
+# --- UI animations (offline) ---
+# CSS badges + inline vendored lottie-web (no external network/static hosting).
 st.markdown(
     """
 <style>
@@ -543,7 +544,7 @@ st.markdown(
 @keyframes oc_bounce {0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 @keyframes oc_shake {0%{transform:translateX(0)}25%{transform:translateX(-2px)}50%{transform:translateX(2px)}75%{transform:translateX(-2px)}100%{transform:translateX(0)}}
 
-.oc-badge{display:inline-flex;align-items:center;gap:6px}
+.oc-badge{display:inline-flex;align-items:center;gap:8px}
 .oc-dot{width:8px;height:8px;border-radius:999px;display:inline-block}
 .oc-dot.working{background:#3b82f6;animation:oc_pulse 1s infinite}
 .oc-dot.planning{background:#f59e0b;animation:oc_bounce .8s infinite}
@@ -551,13 +552,24 @@ st.markdown(
 .oc-dot.failed{background:#ef4444;animation:oc_shake .6s infinite}
 .oc-dot.done{background:#22c55e}
 
-.oc-mini-spinner{width:12px;height:12px;border:2px solid rgba(59,130,246,.25);border-top-color:#3b82f6;border-radius:50%;display:inline-block;animation:oc_spin .8s linear infinite}
-.oc-mini-check{color:#22c55e;font-weight:700}
-.oc-mini-cross{color:#ef4444;font-weight:700;animation:oc_shake .6s infinite}
+/* Lottie containers */
+.oc-lottie{width:44px;height:44px;display:inline-block;vertical-align:middle}
 </style>
 """,
     unsafe_allow_html=True,
 )
+
+@st.cache_data
+def _read_text(p: Path) -> str:
+    return p.read_text(encoding="utf-8")
+
+
+def _lottie_js() -> str:
+    return _read_text(ROOT / "assets" / "lottie" / "lottie.min.js")
+
+
+def _lottie_anim(state: str) -> str:
+    return _read_text(ROOT / "assets" / "lottie" / f"{state}.json")
 
 ensure_registry_and_migrate_default()
 
@@ -844,23 +856,58 @@ def render_team_room(team_id: str) -> None:
                 name = s.get('name', rid)
                 status = s.get('status','')
 
-                # Offline animated badge
+                # Offline animated badge + vendored Lottie (best-effort).
                 cls = 'idle'
-                icon_html = ''
+                lottie_state = 'idle'
                 if status == 'Working':
                     cls = 'working'
-                    icon_html = '<span class="oc-mini-spinner"></span>'
+                    lottie_state = 'working'
                 elif status == 'Planning':
                     cls = 'planning'
-                    icon_html = '<span class="oc-dot planning"></span>'
+                    lottie_state = 'planning'
                 elif status in ('Failed','Error'):
                     cls = 'failed'
-                    icon_html = '<span class="oc-mini-cross">✕</span>'
+                    lottie_state = 'failed'
                 elif status in ('Done','Completed'):
                     cls = 'done'
-                    icon_html = '<span class="oc-mini-check">✓</span>'
+                    lottie_state = 'done'
 
-                header_html = f"<div class='oc-badge'><span class='oc-dot {cls}'></span><strong>{name}</strong>{icon_html}</div>"
+                # Use unique DOM id so multiple cards don't collide.
+                dom_id = f"lottie_{rid}".replace(":", "_").replace("/", "_")
+
+                # Inline vendored lottie library + animation json (offline)
+                lottie_js = _lottie_js()
+                anim_json = _lottie_anim(lottie_state)
+                header_html = f"""
+<div class='oc-badge'>
+  <span class='oc-dot {cls}'></span>
+  <div id='{dom_id}' class='oc-lottie'></div>
+  <strong>{name}</strong>
+</div>
+<script>
+(function() {{
+  try {{
+    if (!window.__oc_lottie_lib__) {{
+      window.__oc_lottie_lib__ = true;
+      {lottie_js}
+    }}
+    var el = document.getElementById('{dom_id}');
+    if (!el || !window.lottie) return;
+    el.innerHTML = '';
+    var animData = {anim_json};
+    window.lottie.loadAnimation({{
+      container: el,
+      renderer: 'svg',
+      loop: true,
+      autoplay: true,
+      animationData: animData
+    }});
+  }} catch (e) {{
+    // ignore
+  }}
+}})();
+</script>
+"""
                 st.markdown(header_html, unsafe_allow_html=True)
                 st.caption(f"状态：{status}  |  Round: {s.get('round','-')}  | 更新：{s.get('updated_at','-')}")
                 if s.get("task"):

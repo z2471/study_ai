@@ -561,50 +561,51 @@ h1,h2,h3,h4,h5,h6, p, li, div { color: #e5e7eb; }
 }
 
 /* Inputs (text_input / text_area / chat_input) */
-input, textarea{
-  background: rgba(255,255,255,.10) !important;
-  color: #e5e7eb !important;
-  border: 1px solid rgba(255,255,255,.18) !important;
-  border-radius: 12px !important;
-}
-/* Streamlit wraps inputs in baseweb; style those too */
+/* Baseweb inputs: set background on the OUTER control, not the raw <input> */
 [data-baseweb="input"] > div,
 [data-baseweb="textarea"] > div{
-  background: rgba(255,255,255,.10) !important;
+  background: rgba(15,23,42,.55) !important;
   border: 1px solid rgba(255,255,255,.18) !important;
   border-radius: 12px !important;
 }
-input::placeholder, textarea::placeholder{ color: rgba(229,231,235,.80) !important; }
-[data-baseweb="input"] input::placeholder,
-[data-baseweb="textarea"] textarea::placeholder{ color: rgba(229,231,235,.80) !important; }
+/* Raw html inputs inside */
+[data-baseweb="input"] input,
+[data-baseweb="textarea"] textarea,
+input, textarea{
+  background: transparent !important;
+  color: #e5e7eb !important;
+}
 
-input:focus, textarea:focus{
-  outline: none !important;
+input::placeholder, textarea::placeholder,
+[data-baseweb="input"] input::placeholder,
+[data-baseweb="textarea"] textarea::placeholder{ color: rgba(229,231,235,.82) !important; }
+
+[data-baseweb="input"]:focus-within > div,
+[data-baseweb="textarea"]:focus-within > div{
   border-color: rgba(168,85,247,.65) !important;
   box-shadow: 0 0 0 3px rgba(168,85,247,.18) !important;
 }
 
-/* Chat input (sometimes shadow DOM-ish) */
-[data-testid="stChatInput"] textarea{
-  background: rgba(255,255,255,.10) !important;
-  color: #e5e7eb !important;
+/* Chat input */
+[data-testid="stChatInput"] [data-baseweb="textarea"] > div{
+  background: rgba(15,23,42,.55) !important;
 }
 
 /* Selectbox / dropdown (baseweb) */
 [data-baseweb="select"] > div{
-  background: rgba(255,255,255,.08) !important;
+  background: rgba(15,23,42,.55) !important;
   border: 1px solid rgba(255,255,255,.18) !important;
   border-radius: 12px !important;
 }
+[data-baseweb="select"] input{ background: transparent !important; color: #e5e7eb !important; }
 [data-baseweb="select"] *{ color: #e5e7eb !important; }
-/* Popover list is sometimes rendered elsewhere */
-div[data-baseweb="popover"] ul[role="listbox"],
-ul[role="listbox"]{
+
+/* Dropdown list (Baseweb menu) */
+div[role="listbox"], ul[role="listbox"]{
   background: rgba(17,24,39,.98) !important;
   border: 1px solid rgba(255,255,255,.18) !important;
 }
-div[data-baseweb="popover"] ul[role="listbox"] li,
-ul[role="listbox"] li{ color:#e5e7eb !important; }
+div[role="option"], ul[role="listbox"] li{ color:#e5e7eb !important; }
 
 /* Buttons */
 .stButton > button{

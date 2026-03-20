@@ -257,3 +257,43 @@ def cancel_queued_task(paths: TeamPaths, mission_id: str) -> bool:
             f.write(json.dumps(obj, ensure_ascii=False) + "\n")
     tmp.replace(paths.task_queue)
     return True
+
+
+def reorder_queue(paths: TeamPaths, mission_id: str, direction: str) -> bool:
+    """Move a queued task up/down in the queue.
+
+    direction: 'up' or 'down'
+    Only affects tasks with status queued.
+    """
+    if not mission_id:
+        return False
+    q = read_jsonl(paths.task_queue, limit=None)
+    if not q:
+        return False
+
+    # collect indices of queued tasks
+    queued_idx = [i for i, t in enumerate(q) if isinstance(t, dict) and t.get("status") in (None, "queued")]
+    # find mission index among queued
+    pos = None
+    for j, i in enumerate(queued_idx):
+        if q[i].get("mission_id") == mission_id:
+            pos = j
+            break
+    if pos is None:
+        return False
+
+    if direction == "up" and pos > 0:
+        i1, i2 = queued_idx[pos], queued_idx[pos - 1]
+        q[i1], q[i2] = q[i2], q[i1]
+    elif direction == "down" and pos < len(queued_idx) - 1:
+        i1, i2 = queued_idx[pos], queued_idx[pos + 1]
+        q[i1], q[i2] = q[i2], q[i1]
+    else:
+        return False
+
+    tmp = paths.task_queue.with_suffix(".jsonl.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for obj in q:
+            f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    tmp.replace(paths.task_queue)
+    return True

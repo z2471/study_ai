@@ -620,7 +620,9 @@ div[data-baseweb="popover"] > div{
 
 ul[role="listbox"],
 div[role="listbox"],
-div[data-baseweb="menu"]{
+div[data-baseweb="menu"],
+div[role="dialog"],
+div[role="presentation"]{
   background: rgba(17,24,39,.98) !important;
   border: 1px solid rgba(255,255,255,.18) !important;
 }
@@ -629,7 +631,8 @@ div[data-baseweb="menu"]{
 li[role="option"],
 div[role="option"],
 div[data-baseweb="menu"] li,
-div[data-baseweb="menu"] div{
+div[data-baseweb="menu"] div,
+[role="listbox"] *{
   background: transparent !important;
   color: #e5e7eb !important;
 }

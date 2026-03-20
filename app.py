@@ -442,6 +442,14 @@ def run_orchestrator(
                     loop_notes.append(f"Applied file writes: {changed}")
                     if team_paths is not None:
                         emit_event(team_paths, speaker="integrator", speaker_name=roles["integrator"]["name"], type="WRITE_FILES", content="\n".join(changed) or "(no files)", round=r, cb=on_event)
+                        # Persist changed files into mission metadata
+                        board0 = load_json(team_paths.mission_board, default={"missions": {}})
+                        m0 = (board0.get("missions") or {}).get(mission_id) or {}
+                        prev = m0.get("changed_files") or []
+                        if not isinstance(prev, list):
+                            prev = []
+                        merged = list(dict.fromkeys([*prev, *changed]))
+                        mission_set(team_paths, mission_id=mission_id, changed_files=merged)
 
                     cmd_logs: list[str] = []
                     for cmd in bundle.get("commands", []) or []:
@@ -467,8 +475,17 @@ def run_orchestrator(
                         run_cmd("git add -A", timeout=60)
                         code, out = run_cmd(f"git commit -m {json.dumps(msg)}", timeout=60)
                         loop_notes.append(f"git commit: exit={code}\n{out}")
+                        commit_hash = None
+                        try:
+                            mm = re.search(r"\[[^\]]+\s+([0-9a-f]{7,40})\]", out)
+                            if mm:
+                                commit_hash = mm.group(1)
+                        except Exception:
+                            commit_hash = None
                         if team_paths is not None:
                             emit_event(team_paths, speaker="integrator", speaker_name=roles["integrator"]["name"], type="COMMIT", content=f"{msg}\n{out}\n(exit={code})", round=r, cb=on_event)
+                            if code == 0 and commit_hash:
+                                mission_set(team_paths, mission_id=mission_id, commit_hash=commit_hash, commit_message=msg)
                         latest_snap = repo_snapshot()
 
         if bool(plan.get("done")):
@@ -820,6 +837,55 @@ def render_team_room(team_id: str) -> None:
             )
             if status == "Failed" and main.get("error_summary"):
                 st.error(f"失败原因：{main.get('error_summary')}")
+
+            # Artifacts / rollback info & actions
+            changed_files = main.get("changed_files") or []
+            commit_hash = main.get("commit_hash")
+            if changed_files or commit_hash:
+                st.divider()
+                st.markdown("**产物 / 回滚**")
+                if changed_files:
+                    st.caption("改动文件：")
+                    st.code("\n".join(changed_files)[:1500], language="text")
+                if commit_hash:
+                    st.caption(f"commit: {commit_hash}  ({main.get('commit_message','')})")
+
+                # Confirmed actions (destructive)
+                if "rollback_confirm" not in st.session_state:
+                    st.session_state.rollback_confirm = {}
+
+                keybase = str(main.get("id") or "main")
+                if commit_hash:
+                    if st.button("回滚该 commit（git revert）", key=f"revert_btn_{keybase}"):
+                        st.session_state.rollback_confirm[f"revert:{keybase}"] = True
+                    if st.session_state.rollback_confirm.get(f"revert:{keybase}"):
+                        st.warning("确认执行 git revert？这会生成一个反向提交。")
+                        if st.button("确认回滚", key=f"revert_yes_{keybase}"):
+                            cmd = f"git revert --no-edit {commit_hash}"
+                            code, out = run_cmd(cmd, timeout=300)
+                            emit_event(tp, speaker="integrator", speaker_name="集成提交", type="ROLLBACK", content=f"$ {cmd}\n{out}\n(exit={code})", meta={"mission_id": keybase})
+                            st.session_state.rollback_confirm.pop(f"revert:{keybase}", None)
+                            st.rerun()
+                        if st.button("取消回滚", key=f"revert_no_{keybase}"):
+                            st.session_state.rollback_confirm.pop(f"revert:{keybase}", None)
+                            st.rerun()
+                else:
+                    # No commit: allow restoring working tree files
+                    if changed_files:
+                        if st.button("撤回未提交改动（git restore）", key=f"restore_btn_{keybase}"):
+                            st.session_state.rollback_confirm[f"restore:{keybase}"] = True
+                        if st.session_state.rollback_confirm.get(f"restore:{keybase}"):
+                            st.warning("确认执行 git restore 以撤回这些未提交改动？")
+                            if st.button("确认撤回", key=f"restore_yes_{keybase}"):
+                                files = " ".join(json.dumps(f) for f in changed_files)
+                                cmd = f"git restore -- {files}"
+                                code, out = run_cmd(cmd, timeout=300)
+                                emit_event(tp, speaker="integrator", speaker_name="集成提交", type="ROLLBACK", content=f"$ {cmd}\n{out}\n(exit={code})", meta={"mission_id": keybase})
+                                st.session_state.rollback_confirm.pop(f"restore:{keybase}", None)
+                                st.rerun()
+                            if st.button("取消撤回", key=f"restore_no_{keybase}"):
+                                st.session_state.rollback_confirm.pop(f"restore:{keybase}", None)
+                                st.rerun()
 
         def _by_status(wanted: str) -> list[dict]:
             if wanted == "Canceled":

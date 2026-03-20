@@ -552,6 +552,20 @@ st.markdown(
 }
 h1,h2,h3,h4,h5,h6, p, li, div { color: #e5e7eb; }
 
+/* Inputs (text_input / text_area / chat_input) */
+input, textarea{
+  background: rgba(255,255,255,.06) !important;
+  color: #e5e7eb !important;
+  border: 1px solid rgba(255,255,255,.14) !important;
+  border-radius: 12px !important;
+}
+input::placeholder, textarea::placeholder{ color: rgba(229,231,235,.55) !important; }
+input:focus, textarea:focus{
+  outline: none !important;
+  border-color: rgba(168,85,247,.55) !important;
+  box-shadow: 0 0 0 3px rgba(168,85,247,.15) !important;
+}
+
 /* Buttons */
 .stButton > button{
   border: 1px solid rgba(255,255,255,.14) !important;
@@ -862,8 +876,8 @@ def render_team_room(team_id: str) -> None:
 
     # Layout: Mission board large, Office as side panel, Timeline on the left.
     # Three-column layout works better for demo screens.
-    # Layout tuning: make Office a bit narrower (still biggest), Mission/Timeline slightly wider
-    left, mid, right = st.columns([1.1, 1.7, 2.2])
+    # Layout tuning: give Mission board more width; Office still large
+    left, mid, right = st.columns([1.0, 2.2, 1.8])
 
     # Selection state for "jump to timeline"
     if "team_selected_mission" not in st.session_state:
@@ -953,8 +967,8 @@ def render_team_room(team_id: str) -> None:
 <!doctype html><html><head><meta charset='utf-8'/>
 <style>
   body{margin:0;background:transparent;}
-  .room-wrap{width:720px;height:480px;position:relative;}
-  .bg{position:absolute;inset:0;}
+  .room-wrap{width:100%;height:480px;position:relative;}
+  .bg{position:absolute;inset:0;display:flex;justify-content:flex-end;}
   .bg svg{width:100%;height:100%;}
   .overlay{position:absolute;inset:0;}
 
@@ -989,7 +1003,7 @@ def render_team_room(team_id: str) -> None:
 </head><body>
 <div class='room-wrap'>
   <div class='bg'>
-    <img src='""" + bg_data_url + """' style='width:100%;height:100%;object-fit:contain;border-radius:14px;' />
+    <img src='""" + bg_data_url + """' style='width:100%;height:100%;object-fit:contain;object-position:right center;border-radius:14px;' />
   </div>
   <div class='overlay' id='overlay'></div>
   <div class='tip' id='tip'></div>

@@ -989,14 +989,14 @@ def render_team_room(team_id: str) -> None:
            border-radius:10px;
            animation: screenGlow 2.4s ease-in-out infinite;}
   .glow{position:absolute;left:10px;top:40px;width:150px;height:92px;border-radius:18px;filter:blur(16px);opacity:.30;}
-  .avatar{position:absolute;left:92px;top:94px;width:66px;height:66px;z-index:5;cursor:pointer;}
-  .avatar::before{content:'';position:absolute;inset:-6px;border-radius:999px;
-    background: radial-gradient(circle at 40% 40%, rgba(255,255,255,.22), rgba(255,255,255,.06));
-    border:1px solid rgba(255,255,255,.14);
-    box-shadow:0 18px 40px rgba(0,0,0,.25);
+  .avatar{position:absolute;left:92px;top:92px;width:80px;height:80px;z-index:5;cursor:pointer;
+          filter: drop-shadow(0 10px 18px rgba(0,0,0,.25));}
+  /* remove the round "badge" so the character itself is visible */
+  .avatar::before{content:'';position:absolute;inset:-2px;border-radius:16px;
+    background: transparent;
   }
   .avatar > svg, .avatar > div, .avatar > canvas { position:relative; z-index:2; }
-  .avatar:hover{filter: drop-shadow(0 0 10px rgba(168,85,247,.35)) drop-shadow(0 0 12px rgba(59,130,246,.25));}
+  .avatar:hover{filter: drop-shadow(0 0 14px rgba(168,85,247,.45)) drop-shadow(0 0 14px rgba(59,130,246,.35));}
 
   .label{position:absolute;left:12px;top:8px;font:12px/1.2 sans-serif;color:#e5e7eb;opacity:.95;}
   .tip{position:absolute;display:none;z-index:20;max-width:260px;background:rgba(17,24,39,.92);color:#e5e7eb;
@@ -1083,6 +1083,7 @@ seats.forEach(s=> room.appendChild(mkSeat(s)) );
 
     with mid:
         st.markdown("### Mission 看板")
+        # Put the whole mission board inside a fixed-height scroll container
         mission_panel = st.container(height=520)
         with mission_panel:
             # Touch the missions to update live elapsed for running items.
@@ -1095,9 +1096,9 @@ seats.forEach(s=> room.appendChild(mkSeat(s)) );
                     pass
 
             board = load_json(tp.mission_board, default={"missions": {}})
-        missions = list((board.get("missions") or {}).values())
-        # For backward compatibility, pick the newest main mission as "current".
-        mains = [m for m in missions if m.get("type") == "main"]
+            missions = list((board.get("missions") or {}).values())
+            # For backward compatibility, pick the newest main mission as "current".
+            mains = [m for m in missions if m.get("type") == "main"]
         mains_sorted = sorted(mains, key=lambda x: x.get("created_at") or x.get("started_at") or "", reverse=True)
         main = mains_sorted[0] if mains_sorted else {}
 

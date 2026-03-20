@@ -834,7 +834,8 @@ def render_team_room(team_id: str) -> None:
 
     # Layout: Mission board large, Office as side panel, Timeline on the left.
     # Three-column layout works better for demo screens.
-    left, mid, right = st.columns([2, 2, 1])
+    # Layout tuning: make Office wider, Timeline narrower
+    left, mid, right = st.columns([1.3, 2.0, 1.7])
 
     # Selection state for "jump to timeline"
     if "team_selected_mission" not in st.session_state:
@@ -912,25 +913,26 @@ def render_team_room(team_id: str) -> None:
   body{margin:0;background:transparent;}
   .room-wrap{width:360px;height:360px;}
   .room{position:relative;width:360px;height:360px;perspective:800px;}
-  .floor{position:absolute;inset:0;background:linear-gradient(135deg,#2b2f3a 0%,#1f2430 60%,#161a22 100%);
+  /* Brighter office theme */
+  .floor{position:absolute;inset:0;background:linear-gradient(135deg,#eef2ff 0%,#e2e8f0 55%,#cbd5e1 100%);
          transform:rotateX(55deg) translateY(80px);transform-origin:top; border-radius:14px;}
-  .wall.back{position:absolute;left:0;right:0;top:0;height:120px;background:linear-gradient(#2f3542,#242a36);
+  .wall.back{position:absolute;left:0;right:0;top:0;height:120px;background:linear-gradient(#f8fafc,#e2e8f0);
          border-radius:14px 14px 0 0;}
-  .wall.left{position:absolute;left:0;top:0;bottom:0;width:90px;background:linear-gradient(90deg,#2a303c,#1f2531);
-         border-radius:14px 0 0 14px;opacity:.9;}
+  .wall.left{position:absolute;left:0;top:0;bottom:0;width:90px;background:linear-gradient(90deg,#f1f5f9,#e2e8f0);
+         border-radius:14px 0 0 14px;opacity:1;}
   .seat{position:absolute;width:150px;height:150px;}
-  .desk{position:absolute;left:20px;top:55px;width:110px;height:40px;background:#3b4252;border-radius:8px;
-        transform:skewX(-12deg);box-shadow:0 10px 18px rgba(0,0,0,.35);} 
-  .chair{position:absolute;left:55px;top:95px;width:48px;height:28px;background:#2b3242;border-radius:8px;
+  .desk{position:absolute;left:20px;top:55px;width:110px;height:40px;background:#94a3b8;border-radius:10px;
+        transform:skewX(-12deg);box-shadow:0 10px 18px rgba(15,23,42,.18);} 
+  .chair{position:absolute;left:55px;top:95px;width:48px;height:28px;background:#64748b;border-radius:10px;
          transform:skewX(-12deg);opacity:.95;}
-  .monitor{position:absolute;left:35px;top:35px;width:60px;height:32px;background:#0b1220;border-radius:6px;
-           box-shadow:0 0 0 2px rgba(255,255,255,.06) inset;}
-  .glow{position:absolute;left:10px;top:40px;width:130px;height:80px;border-radius:14px;filter:blur(14px);opacity:.35;}
+  .monitor{position:absolute;left:35px;top:35px;width:60px;height:32px;background:#0f172a;border-radius:8px;
+           box-shadow:0 0 0 2px rgba(255,255,255,.10) inset;}
+  .glow{position:absolute;left:10px;top:40px;width:130px;height:80px;border-radius:14px;filter:blur(14px);opacity:.22;}
   .avatar{position:absolute;left:70px;top:70px;width:52px;height:52px;}
-  .label{position:absolute;left:10px;top:5px;font:12px/1.2 sans-serif;color:#e5e7eb;opacity:.95;}
-  .seat:hover{outline:2px solid rgba(59,130,246,.6);border-radius:10px;}
-  .tip{position:absolute;display:none;z-index:10;max-width:240px;background:rgba(17,24,39,.92);color:#e5e7eb;
-       border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 10px;font:12px/1.4 sans-serif;}
+  .label{position:absolute;left:10px;top:5px;font:12px/1.2 sans-serif;color:#0f172a;opacity:.95;}
+  .seat:hover{outline:2px solid rgba(59,130,246,.55);border-radius:10px;}
+  .tip{position:absolute;display:none;z-index:10;max-width:240px;background:rgba(255,255,255,.96);color:#0f172a;
+       border:1px solid rgba(15,23,42,.12);border-radius:10px;padding:8px 10px;font:12px/1.4 sans-serif;box-shadow:0 10px 24px rgba(15,23,42,.18);}
 </style>
 </head><body>
 <div class='room-wrap'>

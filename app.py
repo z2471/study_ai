@@ -5,10 +5,12 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import streamlit as st
 from openai import DefaultHttpxClient, OpenAI
+
+from team_ui import TeamPaths, emit_event, init_agent_state, load_json, mission_set, read_jsonl, save_json, update_agent_state
 
 # This VM has proxy envs (including socks://) that can break httpx/OpenAI SDK.
 # For this app, we explicitly bypass env proxies and talk to the local Gateway.
@@ -23,6 +25,9 @@ HISTORY_DIR.mkdir(exist_ok=True)
 ORCH_STATE_PATH = HISTORY_DIR / "orchestrator_state.json"
 ORCH_MAX_GOAL_CHARS = 4000
 ORCH_MAX_TRANSCRIPT_CHARS = 20000
+
+TEAM_PATHS = TeamPaths(HISTORY_DIR)
+TEAM_EVENTS_LIMIT = 400
 
 
 def load_roles() -> dict:
@@ -227,14 +232,26 @@ def run_orchestrator(
     allow_write: bool,
     allow_commit: bool,
     max_rounds: int = 10,
+    *,
+    team_paths: TeamPaths | None = None,
+    on_event: Callable[[dict], None] | None = None,
 ) -> str:
     """Run multi-agent orchestration and optionally apply changes.
 
     Returns a markdown transcript.
+    If team_paths is provided, also emits a structured event stream for the Team Room UI.
     """
 
     transcript: list[str] = []
     latest_snap = repo_snapshot()
+
+    if team_paths is not None:
+        # Ensure initial state exists.
+        cur_state = load_json(team_paths.agent_state, default=None)
+        if not isinstance(cur_state, dict) or not cur_state:
+            save_json(team_paths.agent_state, init_agent_state(list(roles.keys()), roles))
+        mission_set(team_paths, mission_id="current", title=user_goal.strip()[:80] or "(no title)", status="Running", started_at=datetime.utcnow().isoformat())
+        emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_START", content=f"任务开始：{user_goal.strip()}", cb=on_event)
 
     coordinator_instruction = (
         "你要作为 Orchestrator 自动调度团队完成用户目标。\n"
@@ -270,6 +287,8 @@ def run_orchestrator(
             f"已知信息/上轮反馈：\n" + "\n".join(loop_notes[-20:])
         )
 
+        if team_paths is not None:
+            update_agent_state(team_paths, "coordinator", status="Planning", task=f"Round {r}: 规划本轮调度", round=r)
         coord_reply = call_role(
             "coordinator",
             roles,
@@ -278,6 +297,9 @@ def run_orchestrator(
             model=model,
         )
         transcript.append(f"#### Round {r} - 总指挥\n{coord_reply}")
+        if team_paths is not None:
+            emit_event(team_paths, speaker="coordinator", speaker_name=roles["coordinator"]["name"], type="PLAN", content=coord_reply, round=r, cb=on_event)
+            update_agent_state(team_paths, "coordinator", status="Idle", last=coord_reply[-400:], round=r)
 
         plan = extract_json_block(coord_reply)
         if not isinstance(plan, dict):
@@ -295,38 +317,71 @@ def run_orchestrator(
                 calls.append(RoleCall(to=to, task=task))
 
         for call in calls:
+            if team_paths is not None:
+                emit_event(team_paths, speaker="coordinator", speaker_name=roles["coordinator"]["name"], type="CALL", content=f"→ {roles[call.to]['name']}：{call.task}", round=r, cb=on_event)
+                update_agent_state(team_paths, call.to, status="Working", task=call.task, round=r)
+                emit_event(team_paths, speaker=call.to, speaker_name=roles[call.to]["name"], type="START", content="开始执行。", round=r, cb=on_event)
+
             h = read_history(call.to)[-30:]
             reply = call_role(call.to, roles, h, call.task, model=model)
             transcript.append(f"**→ {roles[call.to]['name']}**\n\n{reply}")
             loop_notes.append(f"Round {r} {call.to} reply:\n{reply}")
 
+            if team_paths is not None:
+                emit_event(team_paths, speaker=call.to, speaker_name=roles[call.to]["name"], type="RESULT", content=reply, round=r, cb=on_event)
+                update_agent_state(team_paths, call.to, status="Idle", last=reply[-400:], round=r)
+
             if call.to == "integrator" and allow_write:
                 bundle = extract_json_block(reply)
                 if isinstance(bundle, dict) and isinstance(bundle.get("files"), list):
-                    changed = apply_file_writes(bundle.get("files", []))
+                    files_payload = bundle.get("files", [])
+                    if team_paths is not None:
+                        emit_event(team_paths, speaker="integrator", speaker_name=roles["integrator"]["name"], type="WRITE_INTENT", content=json.dumps({"files": [f.get("path") for f in files_payload if isinstance(f, dict)]}, ensure_ascii=False), round=r, cb=on_event)
+
+                    changed = apply_file_writes(files_payload)
                     loop_notes.append(f"Applied file writes: {changed}")
+                    if team_paths is not None:
+                        emit_event(team_paths, speaker="integrator", speaker_name=roles["integrator"]["name"], type="WRITE_FILES", content="\n".join(changed) or "(no files)", round=r, cb=on_event)
 
                     cmd_logs: list[str] = []
                     for cmd in bundle.get("commands", []) or []:
                         if not isinstance(cmd, str) or not cmd.strip():
                             continue
                         code, out = run_cmd(cmd.strip(), timeout=300)
-                        cmd_logs.append(f"$ {cmd}\n{out}\n(exit={code})")
+                        log = f"$ {cmd}\n{out}\n(exit={code})"
+                        cmd_logs.append(log)
+                        if team_paths is not None:
+                            emit_event(team_paths, speaker="integrator", speaker_name=roles["integrator"]["name"], type="RUN_CMD", content=log, round=r, cb=on_event)
                     if cmd_logs:
                         loop_notes.append("Command logs:\n" + "\n\n".join(cmd_logs))
 
                     latest_snap = repo_snapshot()
+                    if team_paths is not None:
+                        emit_event(team_paths, speaker="system", speaker_name="系统", type="REPO_SNAPSHOT", content=latest_snap, round=r, cb=on_event)
 
                     if allow_commit:
                         msg = str(bundle.get("commit_message") or f"auto: round {r}").strip()
                         run_cmd("git add -A", timeout=60)
                         code, out = run_cmd(f"git commit -m {json.dumps(msg)}", timeout=60)
                         loop_notes.append(f"git commit: exit={code}\n{out}")
+                        if team_paths is not None:
+                            emit_event(team_paths, speaker="integrator", speaker_name=roles["integrator"]["name"], type="COMMIT", content=f"{msg}\n{out}\n(exit={code})", round=r, cb=on_event)
                         latest_snap = repo_snapshot()
 
         if bool(plan.get("done")):
             loop_notes.append(f"Round {r}: done=true，停止。")
+            if team_paths is not None:
+                mission_set(team_paths, mission_id="current", status="Completed", finished_at=datetime.utcnow().isoformat())
+                emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_DONE", content="done=true，任务结束。", round=r, cb=on_event)
             break
+
+    if team_paths is not None:
+        # If we exited due to max rounds, mark as partial.
+        board = load_json(team_paths.mission_board, default={"missions": {}})
+        status = board.get("missions", {}).get("current", {}).get("status")
+        if status == "Running":
+            mission_set(team_paths, mission_id="current", status="Stopped", finished_at=datetime.utcnow().isoformat())
+            emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_STOP", content=f"达到最大轮数 {max_rounds}，停止。", cb=on_event)
 
     return "\n\n".join(transcript)
 
@@ -353,12 +408,22 @@ role_ids = list(roles.keys())
 
 # Sidebar
 with st.sidebar:
+    st.header("视图")
+    view_mode = st.radio(
+        "选择视图",
+        ["team_room", "single_role"],
+        format_func=lambda v: "团队聊天室" if v == "team_room" else "单角色聊天",
+        label_visibility="collapsed",
+    )
+
+    st.divider()
     st.header("团队角色")
     role_id = st.radio(
         "选择角色",
         role_ids,
         format_func=lambda rid: roles[rid]["name"],
         label_visibility="collapsed",
+        disabled=(view_mode == "team_room"),
     )
 
     st.divider()
@@ -385,8 +450,114 @@ with st.sidebar:
         st.rerun()
 
 
-role = roles[role_id]
-st.subheader(f"当前角色：{role['name']}")
+def render_team_room() -> None:
+    st.subheader("团队聊天室（Team Room）")
+
+    # Controls
+    cols = st.columns(3)
+    with cols[0]:
+        allow_write = st.checkbox("允许自动写入仓库文件（仅限本 repo）", value=False, key="team_allow_write")
+    with cols[1]:
+        allow_commit = st.checkbox("允许自动 git add/commit（不会 push）", value=False, key="team_allow_commit")
+    with cols[2]:
+        if st.button("清空团队事件/状态", type="secondary"):
+            # Clear files
+            if TEAM_PATHS.event_log.exists():
+                TEAM_PATHS.event_log.unlink()
+            if TEAM_PATHS.agent_state.exists():
+                TEAM_PATHS.agent_state.unlink()
+            if TEAM_PATHS.mission_board.exists():
+                TEAM_PATHS.mission_board.unlink()
+            st.rerun()
+
+    # Right side: Office + Mission
+    left, right = st.columns([2, 1])
+
+    with right:
+        st.markdown("### 办公室大屏")
+        agent_state = load_json(TEAM_PATHS.agent_state, default=init_agent_state(role_ids, roles))
+        # Render as cards
+        for rid in ["coordinator", "coder", "reviewer", "integrator"]:
+            s = agent_state.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}
+            with st.container(border=True):
+                st.markdown(f"**{s.get('name', rid)}**")
+                st.caption(f"状态：{s.get('status','')}  |  Round: {s.get('round','-')}")
+                if s.get("task"):
+                    st.markdown(f"任务：{s['task']}")
+                if s.get("last"):
+                    st.caption("最近输出：")
+                    st.code(str(s.get("last"))[-600:], language="markdown")
+
+        st.markdown("### Mission 看板")
+        board = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
+        current = (board.get("missions") or {}).get("current") or {}
+        with st.container(border=True):
+            st.markdown(f"**当前任务**：{current.get('title','(none)')}")
+            st.caption(f"状态：{current.get('status','(none)')}  | 开始：{current.get('started_at','-')}  | 结束：{current.get('finished_at','-')}")
+
+    with left:
+        st.markdown("### 时间线（完整日志）")
+        timeline_box = st.container(height=520)
+
+        def render_timeline() -> None:
+            evts = read_jsonl(TEAM_PATHS.event_log, limit=TEAM_EVENTS_LIMIT)
+            with timeline_box:
+                for e in evts:
+                    speaker_name = e.get("speaker_name") or e.get("speaker")
+                    typ = e.get("type")
+                    ts = e.get("ts")
+                    rnd = e.get("round")
+                    header = f"[{typ}] {speaker_name}  (round {rnd})\n{ts}" if rnd else f"[{typ}] {speaker_name}\n{ts}"
+                    with st.chat_message("assistant"):
+                        st.caption(header)
+                        # full content
+                        st.markdown(e.get("content", ""))
+
+        render_timeline()
+
+        prompt = st.chat_input("在这里给团队布置任务（由总指挥分解并调度）", key="team_prompt")
+        if prompt:
+            if not (gateway_token_present or api_key_present):
+                st.warning("未检测到模型凭证（OPENCLAW_GATEWAY_TOKEN 或 OPENAI_API_KEY），无法执行。")
+                return
+
+            # Emit user instruction as an event.
+            emit_event(TEAM_PATHS, speaker="user", speaker_name="你", type="USER", content=prompt, cb=None)
+
+            # Live callback: refresh right panel state + timeline
+            def on_event(evt: dict) -> None:
+                # When events come in, re-render timeline and right side panels by rerun.
+                # Streamlit doesn't support partial refresh reliably across columns without rerun.
+                # We keep it simple: write a small placeholder log line and rely on the final rerun.
+                pass
+
+            with st.spinner("总指挥正在调度执行（最多10轮）..."):
+                transcript_md = run_orchestrator(
+                    user_goal=prompt.strip(),
+                    roles=roles,
+                    model=model,
+                    allow_write=bool(allow_write),
+                    allow_commit=bool(allow_commit),
+                    max_rounds=10,
+                    team_paths=TEAM_PATHS,
+                    on_event=None,  # MVP: write to file; UI will refresh at end
+                )
+                # Persist orchestrator transcript as well (optional)
+                save_orchestrator_state(prompt.strip(), transcript_md)
+
+            st.rerun()
+
+
+def render_single_role() -> None:
+    role = roles[role_id]
+    st.subheader(f"当前角色：{role['name']}")
+
+
+if view_mode == "team_room":
+    render_team_room()
+    st.stop()
+
+render_single_role()
 
 if not (gateway_token_present or api_key_present):
     st.warning(

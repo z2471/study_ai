@@ -805,8 +805,13 @@ def render_team_room(team_id: str) -> None:
     with right:
         st.markdown("### 办公室大屏")
         agent_state = load_json(tp.agent_state, default=init_agent_state(role_ids, roles))
-        for rid in role_ids:
-            # Only show assistant roles (skip any user/system if present)
+
+        # Fixed display order for prototype team and other teams (if present)
+        preferred = ["coordinator", "pm", "ux", "prototyper", "writer", "publisher", "coder", "reviewer", "integrator"]
+        ordered = [rid for rid in preferred if rid in role_ids]
+        ordered += [rid for rid in role_ids if rid not in ordered]
+
+        for rid in ordered:
             if rid not in roles:
                 continue
             s = agent_state.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}

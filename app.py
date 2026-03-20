@@ -535,11 +535,37 @@ def apply_file_writes(files: list[dict]) -> list[str]:
 st.set_page_config(page_title="AI 开发团队管理台", layout="wide")
 st.title("AI 开发团队管理台")
 
-# --- UI animations (offline) ---
-# CSS badges + inline vendored lottie-web (no external network/static hosting).
+# --- Global theme (cyber / neon) + offline animations ---
 st.markdown(
     """
 <style>
+/* Global page theme */
+[data-testid="stAppViewContainer"]{
+  background:
+    radial-gradient(1200px 600px at 18% 12%, rgba(168,85,247,.22), transparent 55%),
+    radial-gradient(1000px 520px at 85% 20%, rgba(59,130,246,.18), transparent 55%),
+    linear-gradient(135deg,#070A12 0%, #0A1020 55%, #05070D 100%) !important;
+}
+[data-testid="stSidebar"]{
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
+  border-right: 1px solid rgba(255,255,255,.08);
+}
+h1,h2,h3,h4,h5,h6, p, li, div { color: #e5e7eb; }
+
+/* Buttons */
+.stButton > button{
+  border: 1px solid rgba(255,255,255,.14) !important;
+  background: linear-gradient(135deg, rgba(59,130,246,.25), rgba(168,85,247,.18)) !important;
+  color: #e5e7eb !important;
+  border-radius: 12px !important;
+}
+
+/* Containers / cards */
+div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stExpander"], section[data-testid="stSidebar"] div{
+  border-color: rgba(255,255,255,.10) !important;
+}
+
+/* Small helpers */
 @keyframes oc_pulse {0%{transform:scale(1);opacity:.6}50%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:.6}}
 @keyframes oc_spin {0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
 @keyframes oc_bounce {0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
@@ -552,9 +578,6 @@ st.markdown(
 .oc-dot.idle{background:#9ca3af}
 .oc-dot.failed{background:#ef4444;animation:oc_shake .6s infinite}
 .oc-dot.done{background:#22c55e}
-
-/* Lottie containers */
-.oc-lottie{width:44px;height:44px;display:inline-block;vertical-align:middle}
 </style>
 """,
     unsafe_allow_html=True,
@@ -966,11 +989,18 @@ def render_team_room(team_id: str) -> None:
            border-radius:10px;
            animation: screenGlow 2.4s ease-in-out infinite;}
   .glow{position:absolute;left:10px;top:40px;width:150px;height:92px;border-radius:18px;filter:blur(16px);opacity:.30;}
-  .avatar{position:absolute;left:84px;top:84px;width:56px;height:56px;}
+  .avatar{position:absolute;left:92px;top:94px;width:66px;height:66px;z-index:5;cursor:pointer;}
+  .avatar::before{content:'';position:absolute;inset:-6px;border-radius:999px;
+    background: radial-gradient(circle at 40% 40%, rgba(255,255,255,.22), rgba(255,255,255,.06));
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 18px 40px rgba(0,0,0,.25);
+  }
+  .avatar > svg, .avatar > div, .avatar > canvas { position:relative; z-index:2; }
+  .avatar:hover{filter: drop-shadow(0 0 10px rgba(168,85,247,.35)) drop-shadow(0 0 12px rgba(59,130,246,.25));}
+
   .label{position:absolute;left:12px;top:8px;font:12px/1.2 sans-serif;color:#e5e7eb;opacity:.95;}
-  .seat:hover{outline:2px solid rgba(59,130,246,.55);border-radius:10px;}
-  .tip{position:absolute;display:none;z-index:10;max-width:240px;background:rgba(255,255,255,.96);color:#0f172a;
-       border:1px solid rgba(15,23,42,.12);border-radius:10px;padding:8px 10px;font:12px/1.4 sans-serif;box-shadow:0 10px 24px rgba(15,23,42,.18);}
+  .tip{position:absolute;display:none;z-index:20;max-width:260px;background:rgba(17,24,39,.92);color:#e5e7eb;
+       border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px 10px;font:12px/1.4 sans-serif;box-shadow:0 18px 40px rgba(0,0,0,.35);}
 </style>
 </head><body>
 <div class='room-wrap'>
@@ -1017,13 +1047,15 @@ function mkSeat(s){
     window.lottie.loadAnimation({container: avatar, renderer:'svg', loop:true, autoplay:true, animationData: animData});
   }catch(e){}
 
-  d.addEventListener('mousemove', (ev)=>{
+  // Hover should be on the avatar (person), not the whole seat.
+  avatar.addEventListener('mousemove', (ev)=>{
     tip.style.display='block';
     tip.style.left=(ev.pageX+12)+'px';
     tip.style.top=(ev.pageY+12)+'px';
     tip.innerHTML = `<b>${s.name}</b><br/>${s.rid}<br/>${s.task?('任务：'+s.task+'<br/>'):''}更新：${s.updated}`;
   });
-  d.addEventListener('mouseleave', ()=>{ tip.style.display='none'; });
+  avatar.addEventListener('mouseleave', ()=>{ tip.style.display='none'; });
+
   return d;
 }
 
@@ -1031,7 +1063,8 @@ seats.forEach(s=> room.appendChild(mkSeat(s)) );
 </script>
 </body></html>
 """
-            components.html(scene_html, height=390)
+            # Make the room bigger in the panel
+            components.html(scene_html, height=460)
 
         # Fallback/detail list (still useful)
         with st.expander("工位详情（列表）", expanded=not show_scene):

@@ -554,17 +554,29 @@ h1,h2,h3,h4,h5,h6, p, li, div { color: #e5e7eb; }
 
 /* Inputs (text_input / text_area / chat_input) */
 input, textarea{
-  background: rgba(255,255,255,.06) !important;
+  background: rgba(255,255,255,.08) !important;
   color: #e5e7eb !important;
-  border: 1px solid rgba(255,255,255,.14) !important;
+  border: 1px solid rgba(255,255,255,.16) !important;
   border-radius: 12px !important;
 }
-input::placeholder, textarea::placeholder{ color: rgba(229,231,235,.55) !important; }
+input::placeholder, textarea::placeholder{ color: rgba(229,231,235,.70) !important; }
 input:focus, textarea:focus{
   outline: none !important;
   border-color: rgba(168,85,247,.55) !important;
   box-shadow: 0 0 0 3px rgba(168,85,247,.15) !important;
 }
+
+/* Selectbox / dropdown (baseweb) */
+[data-baseweb="select"] > div{
+  background: rgba(255,255,255,.06) !important;
+  border: 1px solid rgba(255,255,255,.16) !important;
+}
+[data-baseweb="select"] *{ color: #e5e7eb !important; }
+ul[role="listbox"]{
+  background: rgba(17,24,39,.96) !important;
+  border: 1px solid rgba(255,255,255,.16) !important;
+}
+ul[role="listbox"] li{ color:#e5e7eb !important; }
 
 /* Buttons */
 .stButton > button{
@@ -967,7 +979,7 @@ def render_team_room(team_id: str) -> None:
 <!doctype html><html><head><meta charset='utf-8'/>
 <style>
   body{margin:0;background:transparent;}
-  .room-wrap{width:100%;height:480px;position:relative;}
+  .room-wrap{width:100%;height:480px;position:relative;margin-left:auto;}
   .bg{position:absolute;inset:0;display:flex;justify-content:flex-end;}
   .bg svg{width:100%;height:100%;}
   .overlay{position:absolute;inset:0;}
@@ -1178,138 +1190,138 @@ tick();
             missions = list((board.get("missions") or {}).values())
             # For backward compatibility, pick the newest main mission as "current".
             mains = [m for m in missions if m.get("type") == "main"]
-        mains_sorted = sorted(mains, key=lambda x: x.get("created_at") or x.get("started_at") or "", reverse=True)
-        main = mains_sorted[0] if mains_sorted else {}
+            mains_sorted = sorted(mains, key=lambda x: x.get("created_at") or x.get("started_at") or "", reverse=True)
+            main = mains_sorted[0] if mains_sorted else {}
 
-        # Main mission header
-        with st.container(border=True):
-            st.markdown(f"**主任务**：{main.get('title','(none)')}")
-            status = main.get("status", "(none)")
-            elapsed = main.get("elapsed_sec")
-            elapsed_live = main.get("elapsed_sec_live")
-            if isinstance(elapsed, (int, float)):
-                elapsed_txt = f" | 耗时：{int(elapsed)}s"
-            elif isinstance(elapsed_live, (int, float)) and status == "Running":
-                elapsed_txt = f" | 已运行：{int(elapsed_live)}s"
-            else:
-                elapsed_txt = ""
-            st.caption(
-                f"状态：{status}{elapsed_txt}  | 开始：{main.get('started_at','-')}  | 结束：{main.get('finished_at','-')}"
-            )
-            if status == "Failed" and main.get("error_summary"):
-                st.error(f"失败原因：{main.get('error_summary')}")
-
-            # Artifacts / rollback info & actions
-            changed_files = main.get("changed_files") or []
-            commit_hash = main.get("commit_hash")
-            if changed_files or commit_hash:
-                st.divider()
-                st.markdown("**产物 / 回滚**")
-                if changed_files:
-                    st.caption("改动文件：")
-                    st.code("\n".join(changed_files)[:1500], language="text")
-                if commit_hash:
-                    st.caption(f"commit: {commit_hash}  ({main.get('commit_message','')})")
-
-                # Confirmed actions (destructive)
-                if "rollback_confirm" not in st.session_state:
-                    st.session_state.rollback_confirm = {}
-
-                keybase = str(main.get("id") or "main")
-                if commit_hash:
-                    if st.button("回滚该 commit（git revert）", key=f"revert_btn_{keybase}"):
-                        st.session_state.rollback_confirm[f"revert:{keybase}"] = True
-                    if st.session_state.rollback_confirm.get(f"revert:{keybase}"):
-                        st.warning("确认执行 git revert？这会生成一个反向提交。")
-                        if st.button("确认回滚", key=f"revert_yes_{keybase}"):
-                            cmd = f"git revert --no-edit {commit_hash}"
-                            code, out = run_cmd(cmd, timeout=300)
-                            emit_event(tp, speaker="integrator", speaker_name="集成提交", type="ROLLBACK", content=f"$ {cmd}\n{out}\n(exit={code})", meta={"mission_id": keybase})
-                            st.session_state.rollback_confirm.pop(f"revert:{keybase}", None)
-                            st.rerun()
-                        if st.button("取消回滚", key=f"revert_no_{keybase}"):
-                            st.session_state.rollback_confirm.pop(f"revert:{keybase}", None)
-                            st.rerun()
+            # Main mission header
+            with st.container(border=True):
+                st.markdown(f"**主任务**：{main.get('title','(none)')}")
+                status = main.get("status", "(none)")
+                elapsed = main.get("elapsed_sec")
+                elapsed_live = main.get("elapsed_sec_live")
+                if isinstance(elapsed, (int, float)):
+                    elapsed_txt = f" | 耗时：{int(elapsed)}s"
+                elif isinstance(elapsed_live, (int, float)) and status == "Running":
+                    elapsed_txt = f" | 已运行：{int(elapsed_live)}s"
                 else:
-                    # No commit: allow restoring working tree files
+                    elapsed_txt = ""
+                st.caption(
+                    f"状态：{status}{elapsed_txt}  | 开始：{main.get('started_at','-')}  | 结束：{main.get('finished_at','-')}"
+                )
+                if status == "Failed" and main.get("error_summary"):
+                    st.error(f"失败原因：{main.get('error_summary')}")
+
+                # Artifacts / rollback info & actions
+                changed_files = main.get("changed_files") or []
+                commit_hash = main.get("commit_hash")
+                if changed_files or commit_hash:
+                    st.divider()
+                    st.markdown("**产物 / 回滚**")
                     if changed_files:
-                        if st.button("撤回未提交改动（git restore）", key=f"restore_btn_{keybase}"):
-                            st.session_state.rollback_confirm[f"restore:{keybase}"] = True
-                        if st.session_state.rollback_confirm.get(f"restore:{keybase}"):
-                            st.warning("确认执行 git restore 以撤回这些未提交改动？")
-                            if st.button("确认撤回", key=f"restore_yes_{keybase}"):
-                                files = " ".join(json.dumps(f) for f in changed_files)
-                                cmd = f"git restore -- {files}"
+                        st.caption("改动文件：")
+                        st.code("\n".join(changed_files)[:1500], language="text")
+                    if commit_hash:
+                        st.caption(f"commit: {commit_hash}  ({main.get('commit_message','')})")
+
+                    # Confirmed actions (destructive)
+                    if "rollback_confirm" not in st.session_state:
+                        st.session_state.rollback_confirm = {}
+
+                    keybase = str(main.get("id") or "main")
+                    if commit_hash:
+                        if st.button("回滚该 commit（git revert）", key=f"revert_btn_{keybase}"):
+                            st.session_state.rollback_confirm[f"revert:{keybase}"] = True
+                        if st.session_state.rollback_confirm.get(f"revert:{keybase}"):
+                            st.warning("确认执行 git revert？这会生成一个反向提交。")
+                            if st.button("确认回滚", key=f"revert_yes_{keybase}"):
+                                cmd = f"git revert --no-edit {commit_hash}"
                                 code, out = run_cmd(cmd, timeout=300)
                                 emit_event(tp, speaker="integrator", speaker_name="集成提交", type="ROLLBACK", content=f"$ {cmd}\n{out}\n(exit={code})", meta={"mission_id": keybase})
-                                st.session_state.rollback_confirm.pop(f"restore:{keybase}", None)
+                                st.session_state.rollback_confirm.pop(f"revert:{keybase}", None)
                                 st.rerun()
-                            if st.button("取消撤回", key=f"restore_no_{keybase}"):
-                                st.session_state.rollback_confirm.pop(f"restore:{keybase}", None)
+                            if st.button("取消回滚", key=f"revert_no_{keybase}"):
+                                st.session_state.rollback_confirm.pop(f"revert:{keybase}", None)
                                 st.rerun()
-
-        def _by_status(wanted: str) -> list[dict]:
-            if wanted in ("Canceled", "Stopped"):
-                return [m for m in missions if (m.get("status") == wanted and m.get("type") == "main")]
-            return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
-
-        lanes = [
-            ("Backlog", "待办"),
-            ("Running", "执行中"),
-            ("Completed", "完成"),
-            ("Failed", "失败"),
-            ("Canceled", "已撤销"),
-            ("Stopped", "已停止"),
-        ]
-        cols = st.columns(6)
-        for col, (status, label) in zip(cols, lanes):
-            with col:
-                st.markdown(f"**{label}**")
-                items = _by_status(status)
-                if not items:
-                    st.caption("（空）")
-                for m in items[:30]:
-                    title = m.get("title") or m.get("id")
-                    owner = m.get("owner") or "-"
-                    rnd = m.get("round") or "-"
-                    mid_ = m.get("id")
-                    with st.container(border=True):
-                        badge = ""
-                        if m.get("status") == "Running":
-                            badge = "🟦 "
-                        elif m.get("status") == "Completed":
-                            badge = "✅ "
-                        elif m.get("status") == "Failed":
-                            badge = "🟥 "
-                        st.markdown(badge + title)
-                        # show elapsed if available
-                        es = m.get("elapsed_sec")
-                        esl = m.get("elapsed_sec_live")
-                        if isinstance(es, (int, float)):
-                            ttxt = f"{int(es)}s"
-                        elif isinstance(esl, (int, float)) and m.get("status") == "Running":
-                            ttxt = f"{int(esl)}s"
-                        else:
-                            ttxt = "-"
-                        st.caption(f"owner: {owner} | round: {rnd} | t: {ttxt}")
-                        if m.get("status") == "Failed" and m.get("error_summary"):
-                            st.error(str(m.get("error_summary"))[:200])
-
-                        # Cancel queued main missions
-                        if m.get("type") == "main" and m.get("status") == "Backlog" and mid_:
-                            if st.button("撤销", key=f"cancel_{mid_}"):
-                                ok = cancel_queued_task(tp, mid_)
-                                if ok:
-                                    mission_set(tp, mission_id=mid_, status="Canceled", finished_at=datetime.utcnow().isoformat())
-                                    emit_event(tp, speaker="system", speaker_name="系统", type="CANCEL", content=f"已撤销：{mid_}", meta={"mission_id": mid_})
+                    else:
+                        # No commit: allow restoring working tree files
+                        if changed_files:
+                            if st.button("撤回未提交改动（git restore）", key=f"restore_btn_{keybase}"):
+                                st.session_state.rollback_confirm[f"restore:{keybase}"] = True
+                            if st.session_state.rollback_confirm.get(f"restore:{keybase}"):
+                                st.warning("确认执行 git restore 以撤回这些未提交改动？")
+                                if st.button("确认撤回", key=f"restore_yes_{keybase}"):
+                                    files = " ".join(json.dumps(f) for f in changed_files)
+                                    cmd = f"git restore -- {files}"
+                                    code, out = run_cmd(cmd, timeout=300)
+                                    emit_event(tp, speaker="integrator", speaker_name="集成提交", type="ROLLBACK", content=f"$ {cmd}\n{out}\n(exit={code})", meta={"mission_id": keybase})
+                                    st.session_state.rollback_confirm.pop(f"restore:{keybase}", None)
                                     st.rerun()
-                                else:
-                                    st.warning("撤销失败：可能已开始执行或不在队列中")
+                                if st.button("取消撤回", key=f"restore_no_{keybase}"):
+                                    st.session_state.rollback_confirm.pop(f"restore:{keybase}", None)
+                                    st.rerun()
 
-                        # "Jump" behavior: filter/highlight related timeline events.
-                        if mid_:
-                            if st.button("定位到时间线", key=f"jump_{mid_}"):
-                                st.session_state.team_selected_mission = mid_
+            def _by_status(wanted: str) -> list[dict]:
+                if wanted in ("Canceled", "Stopped"):
+                    return [m for m in missions if (m.get("status") == wanted and m.get("type") == "main")]
+                return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
+
+            lanes = [
+                ("Backlog", "待办"),
+                ("Running", "执行中"),
+                ("Completed", "完成"),
+                ("Failed", "失败"),
+                ("Canceled", "已撤销"),
+                ("Stopped", "已停止"),
+            ]
+            cols = st.columns(6)
+            for col, (status, label) in zip(cols, lanes):
+                with col:
+                    st.markdown(f"**{label}**")
+                    items = _by_status(status)
+                    if not items:
+                        st.caption("（空）")
+                    for m in items[:30]:
+                        title = m.get("title") or m.get("id")
+                        owner = m.get("owner") or "-"
+                        rnd = m.get("round") or "-"
+                        mid_ = m.get("id")
+                        with st.container(border=True):
+                            badge = ""
+                            if m.get("status") == "Running":
+                                badge = "🟦 "
+                            elif m.get("status") == "Completed":
+                                badge = "✅ "
+                            elif m.get("status") == "Failed":
+                                badge = "🟥 "
+                            st.markdown(badge + title)
+                            # show elapsed if available
+                            es = m.get("elapsed_sec")
+                            esl = m.get("elapsed_sec_live")
+                            if isinstance(es, (int, float)):
+                                ttxt = f"{int(es)}s"
+                            elif isinstance(esl, (int, float)) and m.get("status") == "Running":
+                                ttxt = f"{int(esl)}s"
+                            else:
+                                ttxt = "-"
+                            st.caption(f"owner: {owner} | round: {rnd} | t: {ttxt}")
+                            if m.get("status") == "Failed" and m.get("error_summary"):
+                                st.error(str(m.get("error_summary"))[:200])
+
+                            # Cancel queued main missions
+                            if m.get("type") == "main" and m.get("status") == "Backlog" and mid_:
+                                if st.button("撤销", key=f"cancel_{mid_}"):
+                                    ok = cancel_queued_task(tp, mid_)
+                                    if ok:
+                                        mission_set(tp, mission_id=mid_, status="Canceled", finished_at=datetime.utcnow().isoformat())
+                                        emit_event(tp, speaker="system", speaker_name="系统", type="CANCEL", content=f"已撤销：{mid_}", meta={"mission_id": mid_})
+                                        st.rerun()
+                                    else:
+                                        st.warning("撤销失败：可能已开始执行或不在队列中")
+
+                            # "Jump" behavior: filter/highlight related timeline events.
+                            if mid_:
+                                if st.button("定位到时间线", key=f"jump_{mid_}"):
+                                    st.session_state.team_selected_mission = mid_
 
     with left:
         st.markdown("### 时间线（完整日志）")

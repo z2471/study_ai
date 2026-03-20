@@ -250,7 +250,14 @@ def run_orchestrator(
         cur_state = load_json(team_paths.agent_state, default=None)
         if not isinstance(cur_state, dict) or not cur_state:
             save_json(team_paths.agent_state, init_agent_state(list(roles.keys()), roles))
-        mission_set(team_paths, mission_id="current", title=user_goal.strip()[:80] or "(no title)", status="Running", started_at=datetime.utcnow().isoformat())
+        mission_set(
+            team_paths,
+            mission_id="mission:main",
+            title=user_goal.strip()[:120] or "(no title)",
+            status="Running",
+            started_at=datetime.utcnow().isoformat(),
+            type="main",
+        )
         emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_START", content=f"任务开始：{user_goal.strip()}", cb=on_event)
 
     coordinator_instruction = (
@@ -308,19 +315,33 @@ def run_orchestrator(
 
         calls_raw = plan.get("calls") or []
         calls: list[RoleCall] = []
-        for c in calls_raw:
+        for i, c in enumerate(calls_raw):
             if not isinstance(c, dict):
                 continue
             to = str(c.get("to", "")).strip()
             task = str(c.get("task", "")).strip()
             if to in roles and task:
                 calls.append(RoleCall(to=to, task=task))
+                if team_paths is not None:
+                    mid = f"mission:r{r}:{i}:{to}"
+                    mission_set(
+                        team_paths,
+                        mission_id=mid,
+                        title=(task[:120] if task else f"Round {r} - {to}"),
+                        status="Backlog",
+                        owner=to,
+                        round=r,
+                        created_at=datetime.utcnow().isoformat(),
+                        type="subtask",
+                    )
 
-        for call in calls:
+        for i, call in enumerate(calls):
+            mid = f"mission:r{r}:{i}:{call.to}"
             if team_paths is not None:
-                emit_event(team_paths, speaker="coordinator", speaker_name=roles["coordinator"]["name"], type="CALL", content=f"→ {roles[call.to]['name']}：{call.task}", round=r, cb=on_event)
+                mission_set(team_paths, mission_id=mid, status="Running", started_at=datetime.utcnow().isoformat())
+                emit_event(team_paths, speaker="coordinator", speaker_name=roles["coordinator"]["name"], type="CALL", content=f"→ {roles[call.to]['name']}：{call.task}", round=r, meta={"mission_id": mid}, cb=on_event)
                 update_agent_state(team_paths, call.to, status="Working", task=call.task, round=r)
-                emit_event(team_paths, speaker=call.to, speaker_name=roles[call.to]["name"], type="START", content="开始执行。", round=r, cb=on_event)
+                emit_event(team_paths, speaker=call.to, speaker_name=roles[call.to]["name"], type="START", content="开始执行。", round=r, meta={"mission_id": mid}, cb=on_event)
 
             h = read_history(call.to)[-30:]
             reply = call_role(call.to, roles, h, call.task, model=model)
@@ -328,7 +349,8 @@ def run_orchestrator(
             loop_notes.append(f"Round {r} {call.to} reply:\n{reply}")
 
             if team_paths is not None:
-                emit_event(team_paths, speaker=call.to, speaker_name=roles[call.to]["name"], type="RESULT", content=reply, round=r, cb=on_event)
+                emit_event(team_paths, speaker=call.to, speaker_name=roles[call.to]["name"], type="RESULT", content=reply, round=r, meta={"mission_id": mid}, cb=on_event)
+                mission_set(team_paths, mission_id=mid, status="Completed", finished_at=datetime.utcnow().isoformat())
                 update_agent_state(team_paths, call.to, status="Idle", last=reply[-400:], round=r)
 
             if call.to == "integrator" and allow_write:
@@ -352,6 +374,9 @@ def run_orchestrator(
                         cmd_logs.append(log)
                         if team_paths is not None:
                             emit_event(team_paths, speaker="integrator", speaker_name=roles["integrator"]["name"], type="RUN_CMD", content=log, round=r, cb=on_event)
+                            if code != 0:
+                                emit_event(team_paths, speaker="system", speaker_name="系统", type="ERROR", content=f"命令执行失败：{cmd} (exit={code})", round=r, cb=on_event)
+                                mission_set(team_paths, mission_id="mission:main", status="Failed")
                     if cmd_logs:
                         loop_notes.append("Command logs:\n" + "\n\n".join(cmd_logs))
 
@@ -371,16 +396,16 @@ def run_orchestrator(
         if bool(plan.get("done")):
             loop_notes.append(f"Round {r}: done=true，停止。")
             if team_paths is not None:
-                mission_set(team_paths, mission_id="current", status="Completed", finished_at=datetime.utcnow().isoformat())
+                mission_set(team_paths, mission_id="mission:main", status="Completed", finished_at=datetime.utcnow().isoformat())
                 emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_DONE", content="done=true，任务结束。", round=r, cb=on_event)
             break
 
     if team_paths is not None:
         # If we exited due to max rounds, mark as partial.
         board = load_json(team_paths.mission_board, default={"missions": {}})
-        status = board.get("missions", {}).get("current", {}).get("status")
+        status = board.get("missions", {}).get("mission:main", {}).get("status")
         if status == "Running":
-            mission_set(team_paths, mission_id="current", status="Stopped", finished_at=datetime.utcnow().isoformat())
+            mission_set(team_paths, mission_id="mission:main", status="Stopped", finished_at=datetime.utcnow().isoformat())
             emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_STOP", content=f"达到最大轮数 {max_rounds}，停止。", cb=on_event)
 
     return "\n\n".join(transcript)
@@ -552,14 +577,38 @@ def render_team_room() -> None:
                                 st.code(str(s.get("last"))[-600:], language="markdown")
 
                 board_live = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
-                current_live = (board_live.get("missions") or {}).get("current") or {}
+                missions = list((board_live.get("missions") or {}).values())
+
+                def _by_status(wanted: str) -> list[dict]:
+                    return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
+
+                main = (board_live.get("missions") or {}).get("mission:main") or {}
+
                 with mission_live.container():
                     st.markdown("### Mission 看板（实时）")
                     with st.container(border=True):
-                        st.markdown(f"**当前任务**：{current_live.get('title','(none)')}")
+                        st.markdown(f"**主任务**：{main.get('title','(none)')}")
                         st.caption(
-                            f"状态：{current_live.get('status','(none)')}  | 开始：{current_live.get('started_at','-')}  | 结束：{current_live.get('finished_at','-')}"
+                            f"状态：{main.get('status','(none)')}  | 开始：{main.get('started_at','-')}  | 结束：{main.get('finished_at','-')}"
                         )
+
+                    cols = st.columns(4)
+                    lanes = [
+                        ("Backlog", "待办"),
+                        ("Running", "执行中"),
+                        ("Completed", "完成"),
+                        ("Failed", "失败"),
+                    ]
+                    for col, (status, label) in zip(cols, lanes):
+                        with col:
+                            st.markdown(f"**{label}**")
+                            for m in _by_status(status)[:20]:
+                                title = m.get("title") or m.get("id")
+                                owner = m.get("owner") or "-"
+                                rnd = m.get("round") or "-"
+                                with st.container(border=True):
+                                    st.markdown(title)
+                                    st.caption(f"owner: {owner} | round: {rnd}")
 
             def render_timeline_live() -> None:
                 evts = read_jsonl(TEAM_PATHS.event_log, limit=TEAM_EVENTS_LIMIT)

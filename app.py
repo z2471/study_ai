@@ -884,10 +884,10 @@ def render_team_room(team_id: str) -> None:
             # Seat positions tuned for the new office background (room-wrap ~720x480)
             # 4 seats around the central 4-monitor desk.
             seats = [
-                {"rid": "coordinator", "x": 338, "y": 220},  # top seat
-                {"rid": "coder", "x": 238, "y": 318},         # left seat
-                {"rid": "reviewer", "x": 452, "y": 318},      # right seat
-                {"rid": "integrator", "x": 356, "y": 398},    # bottom seat
+                {"rid": "coordinator", "x": 330, "y": 185},  # top seat (move up)
+                {"rid": "coder", "x": 225, "y": 275},         # left seat (move up)
+                {"rid": "reviewer", "x": 465, "y": 275},      # right seat (move up)
+                {"rid": "integrator", "x": 345, "y": 335},    # bottom seat (move up)
             ]
 
             lottie_js = _lottie_js()
@@ -959,11 +959,11 @@ def render_team_room(team_id: str) -> None:
   .overlay{position:absolute;inset:0;}
 
   /* Seat overlay positioned over the background */
-  .seat{position:absolute;width:200px;height:200px;}
-  .glow{position:absolute;left:10px;top:50px;width:170px;height:100px;border-radius:22px;filter:blur(18px);opacity:.28;pointer-events:none;}
+  .seat{position:absolute;width:180px;height:180px;}
+  .glow{position:absolute;left:8px;top:46px;width:160px;height:92px;border-radius:20px;filter:blur(16px);opacity:.26;pointer-events:none;}
 
-  /* Bigger avatar; show a visible fallback (lobster) even if lottie fails */
-  .avatar{position:absolute;left:78px;top:56px;width:112px;height:112px;z-index:5;cursor:pointer;
+  /* Avatar */
+  .avatar{position:absolute;left:64px;top:42px;width:92px;height:92px;z-index:5;cursor:pointer;
           display:flex;align-items:center;justify-content:center;
           border-radius:999px;
           background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.45), rgba(255,255,255,.10));

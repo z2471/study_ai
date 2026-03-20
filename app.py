@@ -534,6 +534,31 @@ def apply_file_writes(files: list[dict]) -> list[str]:
 st.set_page_config(page_title="AI 开发团队管理台", layout="wide")
 st.title("AI 开发团队管理台")
 
+# --- UI animations (offline, CSS-based) ---
+st.markdown(
+    """
+<style>
+@keyframes oc_pulse {0%{transform:scale(1);opacity:.6}50%{transform:scale(1.15);opacity:1}100%{transform:scale(1);opacity:.6}}
+@keyframes oc_spin {0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+@keyframes oc_bounce {0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes oc_shake {0%{transform:translateX(0)}25%{transform:translateX(-2px)}50%{transform:translateX(2px)}75%{transform:translateX(-2px)}100%{transform:translateX(0)}}
+
+.oc-badge{display:inline-flex;align-items:center;gap:6px}
+.oc-dot{width:8px;height:8px;border-radius:999px;display:inline-block}
+.oc-dot.working{background:#3b82f6;animation:oc_pulse 1s infinite}
+.oc-dot.planning{background:#f59e0b;animation:oc_bounce .8s infinite}
+.oc-dot.idle{background:#9ca3af}
+.oc-dot.failed{background:#ef4444;animation:oc_shake .6s infinite}
+.oc-dot.done{background:#22c55e}
+
+.oc-mini-spinner{width:12px;height:12px;border:2px solid rgba(59,130,246,.25);border-top-color:#3b82f6;border-radius:50%;display:inline-block;animation:oc_spin .8s linear infinite}
+.oc-mini-check{color:#22c55e;font-weight:700}
+.oc-mini-cross{color:#ef4444;font-weight:700;animation:oc_shake .6s infinite}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 ensure_registry_and_migrate_default()
 
 # Query params: team_id
@@ -818,11 +843,25 @@ def render_team_room(team_id: str) -> None:
             with st.container(border=True):
                 name = s.get('name', rid)
                 status = s.get('status','')
+
+                # Offline animated badge
+                cls = 'idle'
+                icon_html = ''
                 if status == 'Working':
-                    name = '🟦 ' + name
+                    cls = 'working'
+                    icon_html = '<span class="oc-mini-spinner"></span>'
                 elif status == 'Planning':
-                    name = '🟨 ' + name
-                st.markdown(f"**{name}**")
+                    cls = 'planning'
+                    icon_html = '<span class="oc-dot planning"></span>'
+                elif status in ('Failed','Error'):
+                    cls = 'failed'
+                    icon_html = '<span class="oc-mini-cross">✕</span>'
+                elif status in ('Done','Completed'):
+                    cls = 'done'
+                    icon_html = '<span class="oc-mini-check">✓</span>'
+
+                header_html = f"<div class='oc-badge'><span class='oc-dot {cls}'></span><strong>{name}</strong>{icon_html}</div>"
+                st.markdown(header_html, unsafe_allow_html=True)
                 st.caption(f"状态：{status}  |  Round: {s.get('round','-')}  | 更新：{s.get('updated_at','-')}")
                 if s.get("task"):
                     st.markdown(f"任务：{s['task']}")

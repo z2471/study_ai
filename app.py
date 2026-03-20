@@ -539,47 +539,39 @@ st.title("AI 开发团队管理台")
 st.markdown(
     """
 <style>
-/* Global page theme */
+/* Global page theme (LIGHT colorful) */
 [data-testid="stAppViewContainer"]{
   background:
-    radial-gradient(1200px 600px at 18% 12%, rgba(168,85,247,.22), transparent 55%),
-    radial-gradient(1000px 520px at 85% 20%, rgba(59,130,246,.18), transparent 55%),
-    linear-gradient(135deg,#070A12 0%, #0A1020 55%, #05070D 100%) !important;
+    radial-gradient(1200px 600px at 18% 12%, rgba(168,85,247,.18), transparent 55%),
+    radial-gradient(1000px 520px at 85% 20%, rgba(59,130,246,.16), transparent 55%),
+    radial-gradient(900px 520px at 55% 80%, rgba(34,197,94,.10), transparent 55%),
+    linear-gradient(135deg,#f8fafc 0%, #eef2ff 55%, #fdf2f8 100%) !important;
 }
 [data-testid="stSidebar"]{
-  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
-  border-right: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.78) !important;
+  border-right: 1px solid rgba(15,23,42,.10);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
-h1,h2,h3,h4,h5,h6, p, li, div { color: #e5e7eb; }
+h1,h2,h3,h4,h5,h6, p, li, div { color: #0f172a; }
 
 /* Remove/skin Streamlit top bar */
-[data-testid="stHeader"], header[data-testid="stHeader"]{
-  background: transparent !important;
-}
-[data-testid="stToolbar"]{
+[data-testid="stHeader"], header[data-testid="stHeader"], [data-testid="stToolbar"]{
   background: transparent !important;
 }
 
-/* Inputs (text_input / text_area / chat_input) */
-/* Strong, explicit selectors for Streamlit wrappers */
+/* Inputs: light & readable */
 div[data-testid="stTextInput"] [data-baseweb="input"] > div,
 div[data-testid="stTextArea"] [data-baseweb="textarea"] > div,
 div[data-testid="stChatInput"] [data-baseweb="textarea"] > div,
 [data-baseweb="input"] > div,
 [data-baseweb="textarea"] > div{
-  background-color: rgba(2,6,23,.86) !important;
-  border: 1px solid rgba(255,255,255,.22) !important;
+  background-color: rgba(255,255,255,.95) !important;
+  border: 1px solid rgba(15,23,42,.14) !important;
   border-radius: 12px !important;
 }
 
-/* Some Streamlit versions apply background on a deeper wrapper */
-div[data-testid="stTextInput"] [data-baseweb="input"] div,
-div[data-testid="stTextArea"] [data-baseweb="textarea"] div,
-div[data-testid="stChatInput"] [data-baseweb="textarea"] div{
-  background-color: transparent !important;
-}
-
-/* Raw html inputs inside */
+/* Raw inputs */
 div[data-testid="stTextInput"] input,
 div[data-testid="stTextArea"] textarea,
 div[data-testid="stChatInput"] textarea,
@@ -587,89 +579,54 @@ div[data-testid="stChatInput"] textarea,
 [data-baseweb="textarea"] textarea,
 input, textarea{
   background: transparent !important;
-  color: #e5e7eb !important;
-  caret-color: #a78bfa !important;
+  color: #0f172a !important;
+  caret-color: #7c3aed !important;
 }
 
 /* Placeholders */
-div[data-testid="stTextInput"] input::placeholder,
-div[data-testid="stTextArea"] textarea::placeholder,
-div[data-testid="stChatInput"] textarea::placeholder,
 input::placeholder, textarea::placeholder,
 [data-baseweb="input"] input::placeholder,
-[data-baseweb="textarea"] textarea::placeholder{ color: rgba(229,231,235,.86) !important; }
+[data-baseweb="textarea"] textarea::placeholder{ color: rgba(15,23,42,.45) !important; }
 
 /* Focus */
-div[data-testid="stTextInput"] [data-baseweb="input"]:focus-within > div,
-div[data-testid="stTextArea"] [data-baseweb="textarea"]:focus-within > div,
-div[data-testid="stChatInput"] [data-baseweb="textarea"]:focus-within > div,
 [data-baseweb="input"]:focus-within > div,
 [data-baseweb="textarea"]:focus-within > div{
-  border-color: rgba(168,85,247,.72) !important;
-  box-shadow: 0 0 0 3px rgba(168,85,247,.22) !important;
+  border-color: rgba(124,58,237,.55) !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.12) !important;
 }
 
-/* Selectbox / dropdown (baseweb) */
+/* Selectbox */
 [data-baseweb="select"] > div{
-  background: rgba(15,23,42,.55) !important;
-  border: 1px solid rgba(255,255,255,.18) !important;
+  background: rgba(255,255,255,.95) !important;
+  border: 1px solid rgba(15,23,42,.14) !important;
   border-radius: 12px !important;
 }
-[data-baseweb="select"] input{ background: transparent !important; color: #e5e7eb !important; }
-[data-baseweb="select"] *{ color: #e5e7eb !important; }
+[data-baseweb="select"] *{ color: #0f172a !important; }
 
-/* Dropdown list (Baseweb menu) */
-/* In Streamlit/Baseweb, the menu is often rendered under popover/menu nodes */
-div[data-baseweb="popover"],
-div[data-baseweb="popover"] > div{
-  background: transparent !important;
+/* Dropdown list */
+ul[role="listbox"], div[role="listbox"], div[data-baseweb="menu"], div[role="dialog"], div[role="presentation"]{
+  background-color: rgba(255,255,255,.98) !important;
+  border: 1px solid rgba(15,23,42,.14) !important;
 }
-
-/* Dropdown list containers (Baseweb) */
-ul[role="listbox"],
-div[role="listbox"],
-div[data-baseweb="menu"],
-div[data-baseweb="popover"] div[role="dialog"],
-div[data-baseweb="popover"] div[role="presentation"],
-div[role="dialog"],
-div[role="presentation"]{
-  background-color: rgba(17,24,39,.98) !important;
-  border: 1px solid rgba(255,255,255,.18) !important;
-}
-
-/* Ensure inner wrappers don't stay white */
-div[role="dialog"] *,
-div[role="presentation"] *{
-  color: #e5e7eb !important;
-}
-
-/* Options */
-li[role="option"],
-div[role="option"],
-div[data-baseweb="menu"] li,
-div[data-baseweb="menu"] div,
-[role="listbox"] *{
+li[role="option"], div[role="option"], [role="listbox"] *{
+  color: #0f172a !important;
   background-color: transparent !important;
-  color: #e5e7eb !important;
 }
-
-/* Option hover/active */
-li[role="option"]:hover,
-div[role="option"]:hover{
-  background-color: rgba(168,85,247,.18) !important;
+li[role="option"]:hover, div[role="option"]:hover{
+  background-color: rgba(124,58,237,.10) !important;
 }
 
 /* Buttons */
 .stButton > button{
-  border: 1px solid rgba(255,255,255,.14) !important;
-  background: linear-gradient(135deg, rgba(59,130,246,.25), rgba(168,85,247,.18)) !important;
-  color: #e5e7eb !important;
+  border: 1px solid rgba(124,58,237,.22) !important;
+  background: linear-gradient(135deg, rgba(59,130,246,.16), rgba(168,85,247,.14)) !important;
+  color: #0f172a !important;
   border-radius: 12px !important;
 }
 
 /* Containers / cards */
 div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stExpander"], section[data-testid="stSidebar"] div{
-  border-color: rgba(255,255,255,.10) !important;
+  border-color: rgba(15,23,42,.10) !important;
 }
 
 /* Small helpers */

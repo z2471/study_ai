@@ -844,88 +844,168 @@ def render_team_room(team_id: str) -> None:
         st.markdown("### 办公室大屏")
         agent_state = load_json(tp.agent_state, default=init_agent_state(role_ids, roles))
 
-        # Fixed display order for prototype team and other teams (if present)
         preferred = ["coordinator", "pm", "ux", "prototyper", "writer", "publisher", "coder", "reviewer", "integrator"]
         ordered = [rid for rid in preferred if rid in role_ids]
         ordered += [rid for rid in role_ids if rid not in ordered]
 
-        for rid in ordered:
-            if rid not in roles:
-                continue
-            s = agent_state.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}
-            with st.container(border=True):
-                name = s.get('name', rid)
-                status = s.get('status','')
+        # --- 2.5D Office Scene (for dev team) ---
+        show_scene = (team_id == "team_default")
+        if show_scene:
+            # Map the 4 dev roles into 4 seats.
+            seats = [
+                {"rid": "coordinator", "x": 40, "y": 55},
+                {"rid": "coder", "x": 240, "y": 55},
+                {"rid": "reviewer", "x": 40, "y": 230},
+                {"rid": "integrator", "x": 240, "y": 230},
+            ]
 
-                # Offline animated badge + vendored Lottie (best-effort).
-                cls = 'idle'
-                lottie_state = 'idle'
-                if status == 'Working':
-                    cls = 'working'
-                    lottie_state = 'working'
-                elif status == 'Planning':
-                    cls = 'planning'
-                    lottie_state = 'planning'
-                elif status in ('Failed','Error'):
-                    cls = 'failed'
-                    lottie_state = 'failed'
-                elif status in ('Done','Completed'):
-                    cls = 'done'
-                    lottie_state = 'done'
+            lottie_js = _lottie_js()
+            anims = {
+                "working": _lottie_anim("working"),
+                "planning": _lottie_anim("planning"),
+                "idle": _lottie_anim("idle"),
+                "done": _lottie_anim("done"),
+                "failed": _lottie_anim("failed"),
+            }
 
-                # Use unique DOM id so multiple cards don't collide.
-                dom_id = f"lottie_{rid}".replace(":", "_").replace("/", "_")
+            # Build scene html
+            seat_divs = []
+            for seat in seats:
+                rid = seat["rid"]
+                s = agent_state.get(rid) or {"name": roles.get(rid, {}).get("name", rid), "status": "Idle", "task": "", "updated_at": "-"}
+                status = s.get("status") or "Idle"
+                if status == "Working":
+                    st_key = "working"
+                    color = "#3b82f6"
+                elif status == "Planning":
+                    st_key = "planning"
+                    color = "#f59e0b"
+                elif status in ("Failed", "Error"):
+                    st_key = "failed"
+                    color = "#ef4444"
+                elif status in ("Done", "Completed"):
+                    st_key = "done"
+                    color = "#22c55e"
+                else:
+                    st_key = "idle"
+                    color = "#9ca3af"
 
-                # Inline vendored lottie library + animation json (offline)
-                lottie_js = _lottie_js()
-                anim_json = _lottie_anim(lottie_state)
-                # NOTE: Streamlit does not reliably execute <script> in st.markdown.
-                # Use components.html (iframe) to ensure JS runs.
-                header_html = f"""
-<!doctype html>
-<html>
-<head>
-<meta charset='utf-8'/>
+                name = s.get("name", rid)
+                task = (s.get("task") or "").replace("\n", " ")
+                updated = s.get("updated_at") or "-"
+                seat_divs.append(
+                    {
+                        "rid": rid,
+                        "x": seat["x"],
+                        "y": seat["y"],
+                        "name": name,
+                        "task": task,
+                        "updated": updated,
+                        "color": color,
+                        "anim": anims[st_key],
+                    }
+                )
+
+            scene_html = """
+<!doctype html><html><head><meta charset='utf-8'/>
 <style>
-  body {{ margin:0; padding:0; background: transparent; }}
-  .wrap {{ display:flex; align-items:center; gap:8px; font-family: sans-serif; }}
-  .dot {{ width:8px;height:8px;border-radius:999px; background:#9ca3af; }}
-  .dot.working {{ background:#3b82f6; }}
-  .dot.planning {{ background:#f59e0b; }}
-  .dot.failed {{ background:#ef4444; }}
-  .dot.done {{ background:#22c55e; }}
-  #anim {{ width:44px; height:44px; }}
-  .name {{ font-weight:700; font-size:14px; }}
+  body{margin:0;background:transparent;}
+  .room-wrap{width:360px;height:360px;}
+  .room{position:relative;width:360px;height:360px;perspective:800px;}
+  .floor{position:absolute;inset:0;background:linear-gradient(135deg,#2b2f3a 0%,#1f2430 60%,#161a22 100%);
+         transform:rotateX(55deg) translateY(80px);transform-origin:top; border-radius:14px;}
+  .wall.back{position:absolute;left:0;right:0;top:0;height:120px;background:linear-gradient(#2f3542,#242a36);
+         border-radius:14px 14px 0 0;}
+  .wall.left{position:absolute;left:0;top:0;bottom:0;width:90px;background:linear-gradient(90deg,#2a303c,#1f2531);
+         border-radius:14px 0 0 14px;opacity:.9;}
+  .seat{position:absolute;width:150px;height:150px;}
+  .desk{position:absolute;left:20px;top:55px;width:110px;height:40px;background:#3b4252;border-radius:8px;
+        transform:skewX(-12deg);box-shadow:0 10px 18px rgba(0,0,0,.35);} 
+  .chair{position:absolute;left:55px;top:95px;width:48px;height:28px;background:#2b3242;border-radius:8px;
+         transform:skewX(-12deg);opacity:.95;}
+  .monitor{position:absolute;left:35px;top:35px;width:60px;height:32px;background:#0b1220;border-radius:6px;
+           box-shadow:0 0 0 2px rgba(255,255,255,.06) inset;}
+  .glow{position:absolute;left:10px;top:40px;width:130px;height:80px;border-radius:14px;filter:blur(14px);opacity:.35;}
+  .avatar{position:absolute;left:70px;top:70px;width:52px;height:52px;}
+  .label{position:absolute;left:10px;top:5px;font:12px/1.2 sans-serif;color:#e5e7eb;opacity:.95;}
+  .seat:hover{outline:2px solid rgba(59,130,246,.6);border-radius:10px;}
+  .tip{position:absolute;display:none;z-index:10;max-width:240px;background:rgba(17,24,39,.92);color:#e5e7eb;
+       border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 10px;font:12px/1.4 sans-serif;}
 </style>
-</head>
-<body>
-<div class='wrap'>
-  <span class='dot {cls}'></span>
-  <div id='anim'></div>
-  <span class='name'>{name}</span>
+</head><body>
+<div class='room-wrap'>
+  <div class='room' id='room'>
+    <div class='wall back'></div>
+    <div class='wall left'></div>
+    <div class='floor'></div>
+  </div>
+  <div class='tip' id='tip'></div>
 </div>
 <script>
-{lottie_js}
-var animData = {anim_json};
-var el = document.getElementById('anim');
-window.lottie.loadAnimation({{
-  container: el,
-  renderer: 'svg',
-  loop: true,
-  autoplay: true,
-  animationData: animData
-}});
+""" + lottie_js + """
+const seats = """ + json.dumps(seat_divs, ensure_ascii=False) + """;
+const room = document.getElementById('room');
+const tip = document.getElementById('tip');
+
+function mkSeat(s){
+  const d=document.createElement('div');
+  d.className='seat';
+  d.style.left=s.x+'px';
+  d.style.top=s.y+'px';
+  d.dataset.rid=s.rid;
+
+  const label=document.createElement('div');
+  label.className='label';
+  label.textContent=s.name;
+
+  const glow=document.createElement('div');
+  glow.className='glow';
+  glow.style.background=s.color;
+
+  const monitor=document.createElement('div'); monitor.className='monitor';
+  const desk=document.createElement('div'); desk.className='desk';
+  const chair=document.createElement('div'); chair.className='chair';
+
+  const avatar=document.createElement('div'); avatar.className='avatar';
+
+  d.appendChild(glow); d.appendChild(monitor); d.appendChild(desk); d.appendChild(chair); d.appendChild(avatar); d.appendChild(label);
+
+  // lottie
+  try{
+    const animData = s.anim;
+    window.lottie.loadAnimation({container: avatar, renderer:'svg', loop:true, autoplay:true, animationData: animData});
+  }catch(e){}
+
+  d.addEventListener('mousemove', (ev)=>{
+    tip.style.display='block';
+    tip.style.left=(ev.pageX+12)+'px';
+    tip.style.top=(ev.pageY+12)+'px';
+    tip.innerHTML = `<b>${s.name}</b><br/>${s.rid}<br/>${s.task?('任务：'+s.task+'<br/>'):''}更新：${s.updated}`;
+  });
+  d.addEventListener('mouseleave', ()=>{ tip.style.display='none'; });
+  return d;
+}
+
+seats.forEach(s=> room.appendChild(mkSeat(s)) );
 </script>
-</body>
-</html>
+</body></html>
 """
-                components.html(header_html, height=54)
-                st.caption(f"状态：{status}  |  Round: {s.get('round','-')}  | 更新：{s.get('updated_at','-')}")
-                if s.get("task"):
-                    st.markdown(f"任务：{s['task']}")
-                if s.get("last"):
-                    st.caption("最近输出：")
-                    st.code(str(s.get("last"))[-600:], language="markdown")
+            components.html(scene_html, height=390)
+
+        # Fallback/detail list (still useful)
+        with st.expander("工位详情（列表）", expanded=not show_scene):
+            for rid in ordered:
+                if rid not in roles:
+                    continue
+                s = agent_state.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}
+                with st.container(border=True):
+                    st.markdown(f"**{s.get('name', rid)}**")
+                    st.caption(f"状态：{s.get('status','')}  |  Round: {s.get('round','-')}  | 更新：{s.get('updated_at','-')}")
+                    if s.get("task"):
+                        st.markdown(f"任务：{s['task']}")
+                    if s.get("last"):
+                        st.caption("最近输出：")
+                        st.code(str(s.get("last"))[-600:], language="markdown")
 
     with mid:
         st.markdown("### Mission 看板")

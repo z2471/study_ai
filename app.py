@@ -612,11 +612,33 @@ div[data-testid="stChatInput"] [data-baseweb="textarea"]:focus-within > div,
 [data-baseweb="select"] *{ color: #e5e7eb !important; }
 
 /* Dropdown list (Baseweb menu) */
-div[role="listbox"], ul[role="listbox"]{
+/* In Streamlit/Baseweb, the menu is often rendered under popover/menu nodes */
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] > div{
+  background: transparent !important;
+}
+
+ul[role="listbox"],
+div[role="listbox"],
+div[data-baseweb="menu"]{
   background: rgba(17,24,39,.98) !important;
   border: 1px solid rgba(255,255,255,.18) !important;
 }
-div[role="option"], ul[role="listbox"] li{ color:#e5e7eb !important; }
+
+/* Options */
+li[role="option"],
+div[role="option"],
+div[data-baseweb="menu"] li,
+div[data-baseweb="menu"] div{
+  background: transparent !important;
+  color: #e5e7eb !important;
+}
+
+/* Option hover/active */
+li[role="option"]:hover,
+div[role="option"]:hover{
+  background: rgba(168,85,247,.18) !important;
+}
 
 /* Buttons */
 .stButton > button{

@@ -588,6 +588,11 @@ def _read_text(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
 
+@st.cache_data
+def _read_bytes(p: Path) -> bytes:
+    return p.read_bytes()
+
+
 def _lottie_js() -> str:
     return _read_text(ROOT / "assets" / "lottie" / "lottie.min.js")
 
@@ -876,13 +881,13 @@ def render_team_room(team_id: str) -> None:
         show_scene = (team_id == "team_default")
         if show_scene:
             # Map the 4 dev roles into 4 seats.
-            # Seat positions tuned for the cute isometric background (room-wrap ~620x460)
-            # Make it a bit "random" (not perfectly aligned), closer to the reference demo.
+            # Seat positions tuned for the new office background (room-wrap ~720x480)
+            # 4 seats around the central 4-monitor desk.
             seats = [
-                {"rid": "coordinator", "x": 190, "y": 145},
-                {"rid": "coder", "x": 395, "y": 168},
-                {"rid": "reviewer", "x": 140, "y": 322},
-                {"rid": "integrator", "x": 372, "y": 300},
+                {"rid": "coordinator", "x": 345, "y": 238},  # top seat
+                {"rid": "coder", "x": 255, "y": 320},         # left seat
+                {"rid": "reviewer", "x": 438, "y": 325},      # right seat
+                {"rid": "integrator", "x": 360, "y": 385},    # bottom seat
             ]
 
             lottie_js = _lottie_js()
@@ -933,14 +938,17 @@ def render_team_room(team_id: str) -> None:
                     }
                 )
 
-            # Cute isometric office background (vendored)
-            bg_svg = (ROOT / "assets" / "office" / "dev_room.svg").read_text(encoding="utf-8")
+            # Cute isometric office background (vendored image from user)
+            import base64
+            bg_path = ROOT / "assets" / "office" / "dev_room_bg.jpg"
+            bg_b64 = base64.b64encode(_read_bytes(bg_path)).decode("ascii")
+            bg_data_url = "data:image/jpeg;base64," + bg_b64
 
             scene_html = """
 <!doctype html><html><head><meta charset='utf-8'/>
 <style>
   body{margin:0;background:transparent;}
-  .room-wrap{width:620px;height:460px;position:relative;}
+  .room-wrap{width:720px;height:480px;position:relative;}
   .bg{position:absolute;inset:0;}
   .bg svg{width:100%;height:100%;}
   .overlay{position:absolute;inset:0;}
@@ -975,7 +983,7 @@ def render_team_room(team_id: str) -> None:
 </head><body>
 <div class='room-wrap'>
   <div class='bg'>
-""" + bg_svg + """
+    <img src='""" + bg_data_url + """' style='width:100%;height:100%;object-fit:contain;border-radius:14px;' />
   </div>
   <div class='overlay' id='overlay'></div>
   <div class='tip' id='tip'></div>
@@ -1032,7 +1040,7 @@ seats.forEach(s=> overlay.appendChild(mkSeat(s)) );
 </body></html>
 """
             # Make the room bigger in the panel
-            components.html(scene_html, height=460)
+            components.html(scene_html, height=520)
 
         # Fallback/detail list (still useful)
         with st.expander("工位详情（列表）", expanded=not show_scene):

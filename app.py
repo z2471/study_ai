@@ -508,6 +508,15 @@ def render_team_room() -> None:
                     p.unlink()
             st.rerun()
 
+    # Worker status bar (very visible)
+    ws = load_worker_state(TEAM_PATHS)
+    w_status = ws.get("status", "?")
+    w_current = ws.get("current")
+    if w_status == "Running":
+        st.info(f"Worker：Running | 当前任务：{w_current}")
+    else:
+        st.success("Worker：Idle（空闲）")
+
     # --- Background worker (queue executor) ---
     import threading
     import time
@@ -583,6 +592,15 @@ def render_team_room() -> None:
 
     with mid:
         st.markdown("### Mission 看板")
+        # Touch the missions to update live elapsed for running items.
+        board = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
+        for _mid, _m in (board.get("missions") or {}).items():
+            try:
+                if isinstance(_m, dict) and _m.get("status") == "Running" and _m.get("started_at") and not _m.get("finished_at"):
+                    mission_set(TEAM_PATHS, mission_id=_mid, started_at=_m.get("started_at"))
+            except Exception:
+                pass
+
         board = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
         missions = list((board.get("missions") or {}).values())
         # For backward compatibility, pick the newest main mission as "current".
@@ -595,7 +613,13 @@ def render_team_room() -> None:
             st.markdown(f"**主任务**：{main.get('title','(none)')}")
             status = main.get("status", "(none)")
             elapsed = main.get("elapsed_sec")
-            elapsed_txt = f" | 耗时：{int(elapsed)}s" if isinstance(elapsed, (int, float)) else ""
+            elapsed_live = main.get("elapsed_sec_live")
+            if isinstance(elapsed, (int, float)):
+                elapsed_txt = f" | 耗时：{int(elapsed)}s"
+            elif isinstance(elapsed_live, (int, float)) and status == "Running":
+                elapsed_txt = f" | 已运行：{int(elapsed_live)}s"
+            else:
+                elapsed_txt = ""
             st.caption(
                 f"状态：{status}{elapsed_txt}  | 开始：{main.get('started_at','-')}  | 结束：{main.get('finished_at','-')}"
             )

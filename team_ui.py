@@ -115,16 +115,22 @@ def mission_set(paths: TeamPaths, mission_id: str, **patch: Any) -> dict:
     missions = board.setdefault("missions", {})
     m = missions.get(mission_id) or {"id": mission_id}
     m.update(patch)
+
     # Derive elapsed seconds if possible
     try:
+        from datetime import datetime
+
         started_at = m.get("started_at")
         finished_at = m.get("finished_at")
-        if started_at and finished_at:
-            from datetime import datetime
 
+        if started_at:
             s = datetime.fromisoformat(str(started_at))
-            f = datetime.fromisoformat(str(finished_at))
-            m["elapsed_sec"] = max(0.0, (f - s).total_seconds())
+            if finished_at:
+                f = datetime.fromisoformat(str(finished_at))
+                m["elapsed_sec"] = max(0.0, (f - s).total_seconds())
+            else:
+                # Running: compute live elapsed
+                m["elapsed_sec_live"] = max(0.0, (datetime.utcnow() - s).total_seconds())
     except Exception:
         pass
 

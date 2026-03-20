@@ -964,11 +964,11 @@ def render_team_room(team_id: str) -> None:
   .overlay{position:absolute;inset:0;}
 
   /* Seat overlay positioned over the background */
-  .seat{position:absolute;width:180px;height:180px;}
+  .seat{position:absolute;width:200px;height:200px;}
   .glow{position:absolute;left:10px;top:50px;width:170px;height:100px;border-radius:22px;filter:blur(18px);opacity:.28;pointer-events:none;}
 
   /* Bigger avatar; show a visible fallback (lobster) even if lottie fails */
-  .avatar{position:absolute;left:78px;top:60px;width:104px;height:104px;z-index:5;cursor:pointer;
+  .avatar{position:absolute;left:78px;top:56px;width:112px;height:112px;z-index:5;cursor:pointer;
           display:flex;align-items:center;justify-content:center;
           border-radius:999px;
           background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.45), rgba(255,255,255,.10));
@@ -976,7 +976,7 @@ def render_team_room(team_id: str) -> None:
           box-shadow: 0 18px 40px rgba(0,0,0,.22);
           overflow:hidden;
         }
-  .avatar:hover{filter: drop-shadow(0 0 16px rgba(168,85,247,.45)) drop-shadow(0 0 16px rgba(59,130,246,.35));}
+  .avatar:hover{filter: drop-shadow(0 0 18px rgba(168,85,247,.45)) drop-shadow(0 0 18px rgba(59,130,246,.35));}
   .avatar .fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
           opacity:.98;}
 
@@ -1022,37 +1022,21 @@ function mkSeat(s){
   const avatar=document.createElement('div'); avatar.className='avatar';
   if (!s.task) { avatar.classList.add('idleWander'); }
   if (s.status === 'Working') { avatar.classList.add('workingBob'); }
-  // fallback 3D-ish programmer avatar (always visible unless lottie renders on top)
-  const fb=document.createElement('div'); fb.className='fallback';
-  fb.innerHTML = `
-  <svg width="92" height="92" viewBox="0 0 92 92" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#93c5fd"/>
-        <stop offset="1" stop-color="#c4b5fd"/>
-      </linearGradient>
-      <linearGradient id="skin" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#fcd7b6"/>
-        <stop offset="1" stop-color="#f8b48f"/>
-      </linearGradient>
-    </defs>
-    <!-- shadow -->
-    <ellipse cx="46" cy="83" rx="22" ry="6" fill="#0f172a" opacity=".10"/>
-    <!-- torso -->
-    <path d="M28 60 C30 50 40 44 46 44 C52 44 62 50 64 60 L66 76 C66 80 62 84 58 84 H34 C30 84 26 80 26 76 Z" fill="url(#g1)"/>
-    <!-- head (smaller) -->
-    <circle cx="46" cy="32" r="15" fill="url(#skin)"/>
-    <!-- hair -->
-    <path d="M31 33 C33 20 41 14 46 14 C54 14 62 20 61 33 C58 26 54 22 46 22 C39 22 35 26 31 33 Z" fill="#1f2937" opacity=".9"/>
-    <!-- arms -->
-    <path d="M28 62 C20 64 18 70 22 74 C26 78 30 72 32 68" fill="none" stroke="#0f172a" stroke-opacity=".20" stroke-width="6" stroke-linecap="round"/>
-    <path d="M64 62 C72 64 74 70 70 74 C66 78 62 72 60 68" fill="none" stroke="#0f172a" stroke-opacity=".20" stroke-width="6" stroke-linecap="round"/>
-    <!-- laptop -->
-    <path d="M18 58 L74 58 L80 76 L12 76 Z" fill="#111827" opacity=".92"/>
-    <path d="M24 60 L68 60 L72 72 L20 72 Z" fill="#0b1220"/>
-    <rect x="28" y="61" width="36" height="8" rx="2" fill="#60a5fa" opacity=".55"/>
-  </svg>`;
-  avatar.appendChild(fb);
+
+  // Use provided cartoon role images
+  if (s.avatar) {
+    const img = document.createElement('img');
+    img.src = s.avatar;
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.objectFit = 'cover';
+    img.style.objectPosition = '50% 30%';
+    img.style.borderRadius = '999px';
+    avatar.appendChild(img);
+  } else {
+    const fb=document.createElement('div'); fb.className='fallback'; fb.textContent='🙂';
+    avatar.appendChild(fb);
+  }
 
   d.appendChild(glow);
   d.appendChild(avatar);

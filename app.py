@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import streamlit as st
+import streamlit.components.v1 as components
 from openai import DefaultHttpxClient, OpenAI
 
 from team_ui import (
@@ -878,37 +879,47 @@ def render_team_room(team_id: str) -> None:
                 # Inline vendored lottie library + animation json (offline)
                 lottie_js = _lottie_js()
                 anim_json = _lottie_anim(lottie_state)
+                # NOTE: Streamlit does not reliably execute <script> in st.markdown.
+                # Use components.html (iframe) to ensure JS runs.
                 header_html = f"""
-<div class='oc-badge'>
-  <span class='oc-dot {cls}'></span>
-  <div id='{dom_id}' class='oc-lottie'></div>
-  <strong>{name}</strong>
+<!doctype html>
+<html>
+<head>
+<meta charset='utf-8'/>
+<style>
+  body {{ margin:0; padding:0; background: transparent; }}
+  .wrap {{ display:flex; align-items:center; gap:8px; font-family: sans-serif; }}
+  .dot {{ width:8px;height:8px;border-radius:999px; background:#9ca3af; }}
+  .dot.working {{ background:#3b82f6; }}
+  .dot.planning {{ background:#f59e0b; }}
+  .dot.failed {{ background:#ef4444; }}
+  .dot.done {{ background:#22c55e; }}
+  #anim {{ width:44px; height:44px; }}
+  .name {{ font-weight:700; font-size:14px; }}
+</style>
+</head>
+<body>
+<div class='wrap'>
+  <span class='dot {cls}'></span>
+  <div id='anim'></div>
+  <span class='name'>{name}</span>
 </div>
 <script>
-(function() {{
-  try {{
-    if (!window.__oc_lottie_lib__) {{
-      window.__oc_lottie_lib__ = true;
-      {lottie_js}
-    }}
-    var el = document.getElementById('{dom_id}');
-    if (!el || !window.lottie) return;
-    el.innerHTML = '';
-    var animData = {anim_json};
-    window.lottie.loadAnimation({{
-      container: el,
-      renderer: 'svg',
-      loop: true,
-      autoplay: true,
-      animationData: animData
-    }});
-  }} catch (e) {{
-    // ignore
-  }}
-}})();
+{lottie_js}
+var animData = {anim_json};
+var el = document.getElementById('anim');
+window.lottie.loadAnimation({{
+  container: el,
+  renderer: 'svg',
+  loop: true,
+  autoplay: true,
+  animationData: animData
+}});
 </script>
+</body>
+</html>
 """
-                st.markdown(header_html, unsafe_allow_html=True)
+                components.html(header_html, height=54)
                 st.caption(f"状态：{status}  |  Round: {s.get('round','-')}  | 更新：{s.get('updated_at','-')}")
                 if s.get("task"):
                     st.markdown(f"任务：{s['task']}")

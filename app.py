@@ -857,8 +857,8 @@ def render_team_room(team_id: str) -> None:
 
     # Layout: Mission board large, Office as side panel, Timeline on the left.
     # Three-column layout works better for demo screens.
-    # Layout tuning: make Office much wider; Mission/Timeline narrower
-    left, mid, right = st.columns([1.0, 1.4, 2.6])
+    # Layout tuning: make Office a bit narrower (still biggest), Mission/Timeline slightly wider
+    left, mid, right = st.columns([1.1, 1.7, 2.2])
 
     # Selection state for "jump to timeline"
     if "team_selected_mission" not in st.session_state:
@@ -877,11 +877,12 @@ def render_team_room(team_id: str) -> None:
         if show_scene:
             # Map the 4 dev roles into 4 seats.
             # Seat positions tuned for the cute isometric background (room-wrap ~620x460)
+            # Make it a bit "random" (not perfectly aligned), closer to the reference demo.
             seats = [
-                {"rid": "coordinator", "x": 180, "y": 155},
-                {"rid": "coder", "x": 380, "y": 155},
-                {"rid": "reviewer", "x": 155, "y": 315},
-                {"rid": "integrator", "x": 355, "y": 315},
+                {"rid": "coordinator", "x": 190, "y": 145},
+                {"rid": "coder", "x": 395, "y": 168},
+                {"rid": "reviewer", "x": 140, "y": 322},
+                {"rid": "integrator", "x": 372, "y": 300},
             ]
 
             lottie_js = _lottie_js()
@@ -926,6 +927,7 @@ def render_team_room(team_id: str) -> None:
                         "name": name,
                         "task": task,
                         "updated": updated,
+                        "status": status,
                         "color": color,
                         "anim": anims[st_key],
                     }
@@ -944,13 +946,28 @@ def render_team_room(team_id: str) -> None:
   .overlay{position:absolute;inset:0;}
 
   /* Seat overlay positioned over the background */
-  .seat{position:absolute;width:160px;height:160px;}
-  .glow{position:absolute;left:10px;top:40px;width:150px;height:92px;border-radius:18px;filter:blur(16px);opacity:.25;pointer-events:none;}
-  .avatar{position:absolute;left:72px;top:68px;width:76px;height:76px;z-index:5;cursor:pointer;
-          filter: drop-shadow(0 10px 18px rgba(0,0,0,.25));}
-  .avatar:hover{filter: drop-shadow(0 0 14px rgba(168,85,247,.45)) drop-shadow(0 0 14px rgba(59,130,246,.35));}
+  .seat{position:absolute;width:180px;height:180px;}
+  .glow{position:absolute;left:10px;top:50px;width:170px;height:100px;border-radius:22px;filter:blur(18px);opacity:.28;pointer-events:none;}
+
+  /* Bigger avatar; show a visible fallback (lobster) even if lottie fails */
+  .avatar{position:absolute;left:78px;top:60px;width:104px;height:104px;z-index:5;cursor:pointer;
+          display:flex;align-items:center;justify-content:center;
+          border-radius:999px;
+          background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.45), rgba(255,255,255,.10));
+          border: 1px solid rgba(15,23,42,.12);
+          box-shadow: 0 18px 40px rgba(0,0,0,.22);
+          overflow:hidden;
+        }
+  .avatar:hover{filter: drop-shadow(0 0 16px rgba(168,85,247,.45)) drop-shadow(0 0 16px rgba(59,130,246,.35));}
+  .avatar .fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+          font-size:44px;opacity:.92;}
+
+  /* Idle wander */
+  @keyframes wander {0%{transform:translate(0,0)}25%{transform:translate(6px,-3px)}50%{transform:translate(-5px,4px)}75%{transform:translate(4px,6px)}100%{transform:translate(0,0)}}
+  .avatar.idleWander{animation:wander 2.8s ease-in-out infinite;}
+
   .label{position:absolute;left:10px;top:6px;font:12px/1.2 sans-serif;color:#0f172a;opacity:.95;
-         background:rgba(255,255,255,.70);padding:2px 6px;border-radius:10px;border:1px solid rgba(15,23,42,.10)}
+         background:rgba(255,255,255,.75);padding:3px 8px;border-radius:12px;border:1px solid rgba(15,23,42,.10)}
 
   .tip{position:absolute;display:none;z-index:20;max-width:260px;background:rgba(17,24,39,.92);color:#e5e7eb;
        border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px 10px;font:12px/1.4 sans-serif;box-shadow:0 18px 40px rgba(0,0,0,.35);}
@@ -984,6 +1001,10 @@ function mkSeat(s){
   glow.style.background=s.color;
 
   const avatar=document.createElement('div'); avatar.className='avatar';
+  if (!s.task) { avatar.classList.add('idleWander'); }
+  // fallback lobster (always visible unless lottie renders on top)
+  const fb=document.createElement('div'); fb.className='fallback'; fb.textContent='🦞';
+  avatar.appendChild(fb);
 
   d.appendChild(glow);
   d.appendChild(avatar);
@@ -991,6 +1012,7 @@ function mkSeat(s){
 
   try{
     const animData = s.anim;
+    // lottie will insert SVG into avatar; fallback stays behind.
     window.lottie.loadAnimation({container: avatar, renderer:'svg', loop:true, autoplay:true, animationData: animData});
   }catch(e){}
 

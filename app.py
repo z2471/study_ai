@@ -899,6 +899,22 @@ def render_team_room(team_id: str) -> None:
                 "failed": _lottie_anim("failed"),
             }
 
+            # Cute isometric office background + role avatars (vendored)
+            import base64
+            bg_path = ROOT / "assets" / "office" / "dev_room_bg.jpg"
+            bg_b64 = base64.b64encode(_read_bytes(bg_path)).decode("ascii")
+            bg_data_url = "data:image/jpeg;base64," + bg_b64
+
+            def _b64_img(p: Path) -> str:
+                return "data:image/jpeg;base64," + base64.b64encode(_read_bytes(p)).decode("ascii")
+
+            avatar_map = {
+                "coordinator": _b64_img(ROOT / "assets" / "office" / "avatars" / "coordinator.jpg"),
+                "coder": _b64_img(ROOT / "assets" / "office" / "avatars" / "coder.jpg"),
+                "reviewer": _b64_img(ROOT / "assets" / "office" / "avatars" / "reviewer.jpg"),
+                "integrator": _b64_img(ROOT / "assets" / "office" / "avatars" / "integrator.jpg"),
+            }
+
             # Build scene html
             seat_divs = []
             for seat in seats:
@@ -906,19 +922,14 @@ def render_team_room(team_id: str) -> None:
                 s = agent_state.get(rid) or {"name": roles.get(rid, {}).get("name", rid), "status": "Idle", "task": "", "updated_at": "-"}
                 status = s.get("status") or "Idle"
                 if status == "Working":
-                    st_key = "working"
                     color = "#3b82f6"
                 elif status == "Planning":
-                    st_key = "planning"
                     color = "#f59e0b"
                 elif status in ("Failed", "Error"):
-                    st_key = "failed"
                     color = "#ef4444"
                 elif status in ("Done", "Completed"):
-                    st_key = "done"
                     color = "#22c55e"
                 else:
-                    st_key = "idle"
                     color = "#9ca3af"
 
                 name = s.get("name", rid)
@@ -937,22 +948,6 @@ def render_team_room(team_id: str) -> None:
                         "avatar": avatar_map.get(rid),
                     }
                 )
-
-            # Cute isometric office background + role avatars (vendored)
-            import base64
-            bg_path = ROOT / "assets" / "office" / "dev_room_bg.jpg"
-            bg_b64 = base64.b64encode(_read_bytes(bg_path)).decode("ascii")
-            bg_data_url = "data:image/jpeg;base64," + bg_b64
-
-            def _b64_img(p: Path) -> str:
-                return "data:image/jpeg;base64," + base64.b64encode(_read_bytes(p)).decode("ascii")
-
-            avatar_map = {
-                "coordinator": _b64_img(ROOT / "assets" / "office" / "avatars" / "coordinator.jpg"),
-                "coder": _b64_img(ROOT / "assets" / "office" / "avatars" / "coder.jpg"),
-                "reviewer": _b64_img(ROOT / "assets" / "office" / "avatars" / "reviewer.jpg"),
-                "integrator": _b64_img(ROOT / "assets" / "office" / "avatars" / "integrator.jpg"),
-            }
 
             scene_html = """
 <!doctype html><html><head><meta charset='utf-8'/>

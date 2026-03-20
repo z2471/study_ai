@@ -834,8 +834,8 @@ def render_team_room(team_id: str) -> None:
 
     # Layout: Mission board large, Office as side panel, Timeline on the left.
     # Three-column layout works better for demo screens.
-    # Layout tuning: make Office wider, Timeline narrower
-    left, mid, right = st.columns([1.3, 2.0, 1.7])
+    # Layout tuning: make Office much wider; Mission/Timeline narrower
+    left, mid, right = st.columns([1.0, 1.4, 2.6])
 
     # Selection state for "jump to timeline"
     if "team_selected_mission" not in st.session_state:
@@ -911,25 +911,63 @@ def render_team_room(team_id: str) -> None:
 <!doctype html><html><head><meta charset='utf-8'/>
 <style>
   body{margin:0;background:transparent;}
-  .room-wrap{width:360px;height:360px;}
-  .room{position:relative;width:360px;height:360px;perspective:800px;}
-  /* Brighter office theme */
-  .floor{position:absolute;inset:0;background:linear-gradient(135deg,#eef2ff 0%,#e2e8f0 55%,#cbd5e1 100%);
-         transform:rotateX(55deg) translateY(80px);transform-origin:top; border-radius:14px;}
-  .wall.back{position:absolute;left:0;right:0;top:0;height:120px;background:linear-gradient(#f8fafc,#e2e8f0);
-         border-radius:14px 14px 0 0;}
-  .wall.left{position:absolute;left:0;top:0;bottom:0;width:90px;background:linear-gradient(90deg,#f1f5f9,#e2e8f0);
-         border-radius:14px 0 0 14px;opacity:1;}
-  .seat{position:absolute;width:150px;height:150px;}
-  .desk{position:absolute;left:20px;top:55px;width:110px;height:40px;background:#94a3b8;border-radius:10px;
-        transform:skewX(-12deg);box-shadow:0 10px 18px rgba(15,23,42,.18);} 
-  .chair{position:absolute;left:55px;top:95px;width:48px;height:28px;background:#64748b;border-radius:10px;
-         transform:skewX(-12deg);opacity:.95;}
-  .monitor{position:absolute;left:35px;top:35px;width:60px;height:32px;background:#0f172a;border-radius:8px;
-           box-shadow:0 0 0 2px rgba(255,255,255,.10) inset;}
-  .glow{position:absolute;left:10px;top:40px;width:130px;height:80px;border-radius:14px;filter:blur(14px);opacity:.22;}
-  .avatar{position:absolute;left:70px;top:70px;width:52px;height:52px;}
-  .label{position:absolute;left:10px;top:5px;font:12px/1.2 sans-serif;color:#0f172a;opacity:.95;}
+  .room-wrap{width:520px;height:420px;}
+  .room{position:relative;width:520px;height:420px;perspective:980px;}
+
+  /* Cyber-glass / neon office theme (more "炫") */
+  .floor{position:absolute;inset:0;
+        background:
+          radial-gradient(800px 380px at 30% 60%, rgba(168,85,247,.40), transparent 60%),
+          radial-gradient(700px 340px at 80% 70%, rgba(59,130,246,.40), transparent 55%),
+          linear-gradient(135deg,#0b1020 0%,#0a1630 50%,#081225 100%);
+        transform:rotateX(58deg) translateY(96px);
+        transform-origin:top;
+        border-radius:18px;
+        box-shadow: 0 40px 90px rgba(0,0,0,.45);
+  }
+  .wall.back{position:absolute;left:0;right:0;top:0;height:150px;
+        background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.06));
+        border-radius:18px 18px 0 0;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+  }
+  .wall.left{position:absolute;left:0;top:0;bottom:0;width:120px;
+        background:linear-gradient(90deg,rgba(255,255,255,.12),rgba(255,255,255,.04));
+        border-radius:18px 0 0 18px;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+  }
+  @keyframes lightSweep {0%{transform:rotateX(58deg) translateY(96px) translateX(-60px)}100%{transform:rotateX(58deg) translateY(96px) translateX(60px)}}
+  .light{position:absolute;inset:-40px;pointer-events:none;
+        background:linear-gradient(90deg,transparent,rgba(255,255,255,.10),transparent);
+        filter: blur(12px);
+        opacity:.35;
+        transform:rotateX(58deg) translateY(96px);
+        animation: lightSweep 4.5s ease-in-out infinite alternate;
+        border-radius:18px;
+  }
+  .seat{position:absolute;width:170px;height:170px;}
+  .desk{position:absolute;left:24px;top:64px;width:126px;height:44px;
+        background:linear-gradient(135deg,rgba(255,255,255,.18),rgba(255,255,255,.06));
+        border:1px solid rgba(255,255,255,.14);
+        border-radius:14px;
+        transform:skewX(-12deg);
+        box-shadow:0 18px 30px rgba(0,0,0,.28);
+  }
+  .chair{position:absolute;left:66px;top:112px;width:52px;height:30px;
+         background:linear-gradient(135deg,rgba(59,130,246,.25),rgba(168,85,247,.18));
+         border:1px solid rgba(255,255,255,.10);
+         border-radius:12px;
+         transform:skewX(-12deg);
+         opacity:.98;}
+  @keyframes screenGlow {0%{box-shadow:0 0 0 2px rgba(255,255,255,.10) inset,0 0 10px rgba(59,130,246,.08)}50%{box-shadow:0 0 0 2px rgba(255,255,255,.12) inset,0 0 16px rgba(168,85,247,.12)}100%{box-shadow:0 0 0 2px rgba(255,255,255,.10) inset,0 0 10px rgba(59,130,246,.08)}}
+  .monitor{position:absolute;left:44px;top:42px;width:68px;height:36px;
+           background:linear-gradient(135deg,#0b1220,#0a1630);
+           border-radius:10px;
+           animation: screenGlow 2.4s ease-in-out infinite;}
+  .glow{position:absolute;left:10px;top:40px;width:150px;height:92px;border-radius:18px;filter:blur(16px);opacity:.30;}
+  .avatar{position:absolute;left:84px;top:84px;width:56px;height:56px;}
+  .label{position:absolute;left:12px;top:8px;font:12px/1.2 sans-serif;color:#e5e7eb;opacity:.95;}
   .seat:hover{outline:2px solid rgba(59,130,246,.55);border-radius:10px;}
   .tip{position:absolute;display:none;z-index:10;max-width:240px;background:rgba(255,255,255,.96);color:#0f172a;
        border:1px solid rgba(15,23,42,.12);border-radius:10px;padding:8px 10px;font:12px/1.4 sans-serif;box-shadow:0 10px 24px rgba(15,23,42,.18);}
@@ -940,6 +978,7 @@ def render_team_room(team_id: str) -> None:
     <div class='wall back'></div>
     <div class='wall left'></div>
     <div class='floor'></div>
+    <div class='light'></div>
   </div>
   <div class='tip' id='tip'></div>
 </div>
@@ -1011,16 +1050,18 @@ seats.forEach(s=> room.appendChild(mkSeat(s)) );
 
     with mid:
         st.markdown("### Mission 看板")
-        # Touch the missions to update live elapsed for running items.
-        board = load_json(tp.mission_board, default={"missions": {}})
-        for _mid, _m in (board.get("missions") or {}).items():
-            try:
-                if isinstance(_m, dict) and _m.get("status") == "Running" and _m.get("started_at") and not _m.get("finished_at"):
-                    mission_set(tp, mission_id=_mid, started_at=_m.get("started_at"))
-            except Exception:
-                pass
+        mission_panel = st.container(height=520)
+        with mission_panel:
+            # Touch the missions to update live elapsed for running items.
+            board = load_json(tp.mission_board, default={"missions": {}})
+            for _mid, _m in (board.get("missions") or {}).items():
+                try:
+                    if isinstance(_m, dict) and _m.get("status") == "Running" and _m.get("started_at") and not _m.get("finished_at"):
+                        mission_set(tp, mission_id=_mid, started_at=_m.get("started_at"))
+                except Exception:
+                    pass
 
-        board = load_json(tp.mission_board, default={"missions": {}})
+            board = load_json(tp.mission_board, default={"missions": {}})
         missions = list((board.get("missions") or {}).values())
         # For backward compatibility, pick the newest main mission as "current".
         mains = [m for m in missions if m.get("type") == "main"]

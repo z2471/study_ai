@@ -10,7 +10,21 @@ from typing import Any, Callable
 import streamlit as st
 from openai import DefaultHttpxClient, OpenAI
 
-from team_ui import TeamPaths, emit_event, init_agent_state, load_json, mission_set, read_jsonl, save_json, update_agent_state
+from team_ui import (
+    TeamPaths,
+    emit_event,
+    enqueue_task,
+    init_agent_state,
+    load_json,
+    load_worker_state,
+    mission_set,
+    read_jsonl,
+    read_queue,
+    save_json,
+    set_worker_state,
+    take_next_task,
+    update_agent_state,
+)
 
 # This VM has proxy envs (including socks://) that can break httpx/OpenAI SDK.
 # For this app, we explicitly bypass env proxies and talk to the local Gateway.
@@ -234,6 +248,7 @@ def run_orchestrator(
     max_rounds: int = 10,
     *,
     team_paths: TeamPaths | None = None,
+    mission_id: str = "mission:main",
     on_event: Callable[[dict], None] | None = None,
 ) -> str:
     """Run multi-agent orchestration and optionally apply changes.
@@ -252,7 +267,7 @@ def run_orchestrator(
             save_json(team_paths.agent_state, init_agent_state(list(roles.keys()), roles))
         mission_set(
             team_paths,
-            mission_id="mission:main",
+            mission_id=mission_id,
             title=user_goal.strip()[:120] or "(no title)",
             status="Running",
             started_at=datetime.utcnow().isoformat(),
@@ -323,7 +338,7 @@ def run_orchestrator(
             if to in roles and task:
                 calls.append(RoleCall(to=to, task=task))
                 if team_paths is not None:
-                    mid = f"mission:r{r}:{i}:{to}"
+                    mid = f"{mission_id}:r{r}:{i}:{to}"
                     mission_set(
                         team_paths,
                         mission_id=mid,
@@ -336,7 +351,7 @@ def run_orchestrator(
                     )
 
         for i, call in enumerate(calls):
-            mid = f"mission:r{r}:{i}:{call.to}"
+            mid = f"{mission_id}:r{r}:{i}:{call.to}"
             if team_paths is not None:
                 mission_set(team_paths, mission_id=mid, status="Running", started_at=datetime.utcnow().isoformat())
                 emit_event(team_paths, speaker="coordinator", speaker_name=roles["coordinator"]["name"], type="CALL", content=f"→ {roles[call.to]['name']}：{call.task}", round=r, meta={"mission_id": mid}, cb=on_event)
@@ -376,7 +391,7 @@ def run_orchestrator(
                             emit_event(team_paths, speaker="integrator", speaker_name=roles["integrator"]["name"], type="RUN_CMD", content=log, round=r, cb=on_event)
                             if code != 0:
                                 emit_event(team_paths, speaker="system", speaker_name="系统", type="ERROR", content=f"命令执行失败：{cmd} (exit={code})", round=r, cb=on_event)
-                                mission_set(team_paths, mission_id="mission:main", status="Failed")
+                                mission_set(team_paths, mission_id=mission_id, status="Failed", error_summary=f"命令失败: {cmd} (exit={code})")
                     if cmd_logs:
                         loop_notes.append("Command logs:\n" + "\n\n".join(cmd_logs))
 
@@ -396,16 +411,16 @@ def run_orchestrator(
         if bool(plan.get("done")):
             loop_notes.append(f"Round {r}: done=true，停止。")
             if team_paths is not None:
-                mission_set(team_paths, mission_id="mission:main", status="Completed", finished_at=datetime.utcnow().isoformat())
+                mission_set(team_paths, mission_id=mission_id, status="Completed", finished_at=datetime.utcnow().isoformat())
                 emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_DONE", content="done=true，任务结束。", round=r, cb=on_event)
             break
 
     if team_paths is not None:
         # If we exited due to max rounds, mark as partial.
         board = load_json(team_paths.mission_board, default={"missions": {}})
-        status = board.get("missions", {}).get("mission:main", {}).get("status")
+        status = board.get("missions", {}).get(mission_id, {}).get("status")
         if status == "Running":
-            mission_set(team_paths, mission_id="mission:main", status="Stopped", finished_at=datetime.utcnow().isoformat())
+            mission_set(team_paths, mission_id=mission_id, status="Stopped", finished_at=datetime.utcnow().isoformat())
             emit_event(team_paths, speaker="system", speaker_name="系统", type="MISSION_STOP", content=f"达到最大轮数 {max_rounds}，停止。", cb=on_event)
 
     return "\n\n".join(transcript)
@@ -479,21 +494,70 @@ def render_team_room() -> None:
     st.subheader("团队聊天室（Team Room）")
 
     # Controls
-    cols = st.columns(3)
+    cols = st.columns(4)
     with cols[0]:
         allow_write = st.checkbox("允许自动写入仓库文件（仅限本 repo）", value=False, key="team_allow_write")
     with cols[1]:
         allow_commit = st.checkbox("允许自动 git add/commit（不会 push）", value=False, key="team_allow_commit")
     with cols[2]:
+        auto_refresh = st.checkbox("自动刷新（2秒）", value=True, key="team_auto_refresh")
+    with cols[3]:
         if st.button("清空团队事件/状态", type="secondary"):
-            # Clear files
-            if TEAM_PATHS.event_log.exists():
-                TEAM_PATHS.event_log.unlink()
-            if TEAM_PATHS.agent_state.exists():
-                TEAM_PATHS.agent_state.unlink()
-            if TEAM_PATHS.mission_board.exists():
-                TEAM_PATHS.mission_board.unlink()
+            for p in [TEAM_PATHS.event_log, TEAM_PATHS.agent_state, TEAM_PATHS.mission_board, TEAM_PATHS.task_queue, TEAM_PATHS.worker_state]:
+                if p.exists():
+                    p.unlink()
             st.rerun()
+
+    # --- Background worker (queue executor) ---
+    import threading
+    import time
+
+    def _worker_loop() -> None:
+        while True:
+            try:
+                ws = load_worker_state(TEAM_PATHS)
+                if ws.get("status") in (None, "Idle"):
+                    task = take_next_task(TEAM_PATHS)
+                    if task:
+                        mission_id = str(task.get("mission_id") or "mission:main")
+                        goal = str(task.get("goal") or "").strip()
+                        allow_write_ = bool(task.get("allow_write"))
+                        allow_commit_ = bool(task.get("allow_commit"))
+                        model_ = str(task.get("model") or model)
+
+                        set_worker_state(TEAM_PATHS, status="Running", current=mission_id)
+                        emit_event(TEAM_PATHS, speaker="system", speaker_name="系统", type="WORKER", content=f"开始执行队列任务：{mission_id}")
+
+                        try:
+                            transcript_md = run_orchestrator(
+                                user_goal=goal,
+                                roles=roles,
+                                model=model_,
+                                allow_write=allow_write_,
+                                allow_commit=allow_commit_,
+                                max_rounds=10,
+                                team_paths=TEAM_PATHS,
+                                mission_id=mission_id,
+                                on_event=None,
+                            )
+                            save_orchestrator_state(goal, transcript_md)
+                        except Exception as e:
+                            emit_event(TEAM_PATHS, speaker="system", speaker_name="系统", type="ERROR", content=f"Worker 执行异常：{e}")
+                            mission_set(TEAM_PATHS, mission_id=mission_id, status="Failed", error_summary=str(e))
+                        finally:
+                            set_worker_state(TEAM_PATHS, status="Idle", current=None)
+                time.sleep(1.0)
+            except Exception:
+                # Avoid worker dying.
+                time.sleep(2.0)
+
+    @st.cache_resource
+    def _start_worker_once() -> bool:
+        t = threading.Thread(target=_worker_loop, daemon=True)
+        t.start()
+        return True
+
+    _start_worker_once()
 
     # Layout: Mission board large, Office as side panel, Timeline on the left.
     # Three-column layout works better for demo screens.
@@ -521,7 +585,10 @@ def render_team_room() -> None:
         st.markdown("### Mission 看板")
         board = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
         missions = list((board.get("missions") or {}).values())
-        main = (board.get("missions") or {}).get("mission:main") or {}
+        # For backward compatibility, pick the newest main mission as "current".
+        mains = [m for m in missions if m.get("type") == "main"]
+        mains_sorted = sorted(mains, key=lambda x: x.get("created_at") or x.get("started_at") or "", reverse=True)
+        main = mains_sorted[0] if mains_sorted else {}
 
         # Main mission header
         with st.container(border=True):
@@ -593,142 +660,41 @@ def render_team_room() -> None:
 
         render_timeline()
 
-        prompt = st.chat_input("在这里给团队布置任务（由总指挥分解并调度）", key="team_prompt")
+        prompt = st.chat_input("在这里给团队布置任务（会进入队列，自动逐个执行）", key="team_prompt")
         if prompt:
             if not (gateway_token_present or api_key_present):
                 st.warning("未检测到模型凭证（OPENCLAW_GATEWAY_TOKEN 或 OPENAI_API_KEY），无法执行。")
                 return
 
-            # Emit user instruction as an event.
-            emit_event(TEAM_PATHS, speaker="user", speaker_name="你", type="USER", content=prompt, cb=None)
+            # Create a new mission id per task.
+            mission_id = f"mission:{int(datetime.utcnow().timestamp())}"
 
-            # Live callback: refresh right panel state + timeline
-            import time
+            emit_event(TEAM_PATHS, speaker="user", speaker_name="你", type="USER", content=prompt, meta={"mission_id": mission_id}, cb=None)
+            mission_set(
+                TEAM_PATHS,
+                mission_id=mission_id,
+                title=prompt.strip()[:120] or "(no title)",
+                status="Backlog",
+                created_at=datetime.utcnow().isoformat(),
+                type="main",
+            )
 
-            # Live refresh placeholders
-            timeline_live = st.empty()
-            office_live = st.empty()
-            mission_live = st.empty()
+            enqueue_task(
+                TEAM_PATHS,
+                {
+                    "mission_id": mission_id,
+                    "goal": prompt.strip(),
+                    "status": "queued",
+                    "queued_at": datetime.utcnow().isoformat(),
+                    "allow_write": bool(allow_write),
+                    "allow_commit": bool(allow_commit),
+                    "model": model,
+                },
+            )
 
-            # Keep the selection stable during execution
-            if "team_selected_mission" not in st.session_state:
-                st.session_state.team_selected_mission = None
-
-            # Throttle UI refresh to keep Streamlit stable.
-            refresh_every_sec = 0.8
-            last_refresh = 0.0
-
-            def render_office_mission() -> None:
-                agent_state_live = load_json(TEAM_PATHS.agent_state, default=init_agent_state(role_ids, roles))
-                board_live = load_json(TEAM_PATHS.mission_board, default={"missions": {}})
-                missions = list((board_live.get("missions") or {}).values())
-                main = (board_live.get("missions") or {}).get("mission:main") or {}
-
-                def _by_status(wanted: str) -> list[dict]:
-                    return [m for m in missions if (m.get("status") == wanted and m.get("type") != "main")]
-
-                with office_live.container():
-                    st.markdown("### 办公室大屏（实时）")
-                    for rid in ["coordinator", "coder", "reviewer", "integrator"]:
-                        s = agent_state_live.get(rid) or {"name": roles[rid]["name"], "status": "(unknown)", "task": "", "last": ""}
-                        with st.container(border=True):
-                            st.markdown(f"**{s.get('name', rid)}**")
-                            st.caption(f"状态：{s.get('status','')}  |  Round: {s.get('round','-')}")
-                            if s.get("task"):
-                                st.markdown(f"任务：{s['task']}")
-                            if s.get("last"):
-                                st.caption("最近输出：")
-                                st.code(str(s.get("last"))[-600:], language="markdown")
-
-                with mission_live.container():
-                    st.markdown("### Mission 看板（实时）")
-                    with st.container(border=True):
-                        st.markdown(f"**主任务**：{main.get('title','(none)')}")
-                        st.caption(
-                            f"状态：{main.get('status','(none)')}  | 开始：{main.get('started_at','-')}  | 结束：{main.get('finished_at','-')}"
-                        )
-
-                    cols = st.columns(4)
-                    lanes = [
-                        ("Backlog", "待办"),
-                        ("Running", "执行中"),
-                        ("Completed", "完成"),
-                        ("Failed", "失败"),
-                    ]
-                    for col, (status, label) in zip(cols, lanes):
-                        with col:
-                            st.markdown(f"**{label}**")
-                            items = _by_status(status)
-                            if not items:
-                                st.caption("（空）")
-                            for m in items[:30]:
-                                title = m.get("title") or m.get("id")
-                                owner = m.get("owner") or "-"
-                                rnd = m.get("round") or "-"
-                                mid_ = m.get("id")
-                                with st.container(border=True):
-                                    st.markdown(title)
-                                    st.caption(f"owner: {owner} | round: {rnd}")
-                                    if mid_ and st.button("定位到时间线", key=f"jump_live_{mid_}"):
-                                        st.session_state.team_selected_mission = mid_
-
-            def render_timeline_live() -> None:
-                evts = read_jsonl(TEAM_PATHS.event_log, limit=TEAM_EVENTS_LIMIT)
-                selected_mid = st.session_state.get("team_selected_mission")
-                with timeline_live.container():
-                    st.markdown("### 时间线（完整日志，实时）")
-                    if selected_mid:
-                        st.info(f"已定位：{selected_mid}（仅展示相关事件）")
-                        if st.button("清除定位", key="clear_jump_live"):
-                            st.session_state.team_selected_mission = None
-                            st.rerun()
-
-                    for e in evts:
-                        speaker_name = e.get("speaker_name") or e.get("speaker")
-                        typ = e.get("type")
-                        ts = e.get("ts")
-                        rnd = e.get("round")
-                        meta = e.get("meta") or {}
-                        mid = meta.get("mission_id")
-
-                        if selected_mid and mid != selected_mid:
-                            continue
-
-                        header = f"[{typ}] {speaker_name}  (round {rnd})\n{ts}" if rnd else f"[{typ}] {speaker_name}\n{ts}"
-                        with st.chat_message("assistant"):
-                            st.caption(header)
-                            st.markdown(e.get("content", ""))
-
-            # Initial render
-            render_office_mission()
-            render_timeline_live()
-
-            def on_event(evt: dict) -> None:
-                nonlocal last_refresh
-                now = time.time()
-                if now - last_refresh < refresh_every_sec:
-                    return
-                last_refresh = now
-                render_office_mission()
-                render_timeline_live()
-
-            with st.spinner("总指挥正在调度执行（最多10轮）..."):
-                transcript_md = run_orchestrator(
-                    user_goal=prompt.strip(),
-                    roles=roles,
-                    model=model,
-                    allow_write=bool(allow_write),
-                    allow_commit=bool(allow_commit),
-                    max_rounds=10,
-                    team_paths=TEAM_PATHS,
-                    on_event=on_event,
-                )
-                save_orchestrator_state(prompt.strip(), transcript_md)
-
-            # Final refresh
-            render_office_mission()
-            render_timeline_live()
-            st.info("执行完成（或达到最大轮数停止）。")
+            emit_event(TEAM_PATHS, speaker="system", speaker_name="系统", type="QUEUE", content=f"已入队：{mission_id}", meta={"mission_id": mission_id}, cb=None)
+            st.success(f"任务已入队：{mission_id}（正在执行的任务不会被打断）")
+            st.rerun()
 
 
 def render_single_role() -> None:

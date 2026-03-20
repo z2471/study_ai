@@ -37,6 +37,14 @@ class TeamPaths:
     def mission_board(self) -> Path:
         return self.history_dir / "mission_board.json"
 
+    @property
+    def task_queue(self) -> Path:
+        return self.history_dir / "task_queue.jsonl"
+
+    @property
+    def worker_state(self) -> Path:
+        return self.history_dir / "worker_state.json"
+
 
 def append_jsonl(path: Path, obj: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -115,7 +123,17 @@ def mission_set(paths: TeamPaths, mission_id: str, **patch: Any) -> dict:
 EventCallback = Callable[[dict], None]
 
 
-def emit_event(paths: TeamPaths, *, speaker: str, speaker_name: str, type: str, content: str, round: int | None = None, meta: dict | None = None, cb: EventCallback | None = None) -> dict:
+def emit_event(
+    paths: TeamPaths,
+    *,
+    speaker: str,
+    speaker_name: str,
+    type: str,
+    content: str,
+    round: int | None = None,
+    meta: dict | None = None,
+    cb: EventCallback | None = None,
+) -> dict:
     evt = {
         "ts": utc_ts(),
         "speaker": speaker,
@@ -129,3 +147,62 @@ def emit_event(paths: TeamPaths, *, speaker: str, speaker_name: str, type: str, 
     if cb:
         cb(evt)
     return evt
+
+
+# --- Task queue / worker ---
+
+def enqueue_task(paths: TeamPaths, task: dict) -> None:
+    """Append a task to the queue (JSONL)."""
+    append_jsonl(paths.task_queue, task)
+
+
+def read_queue(paths: TeamPaths, limit: int | None = None) -> list[dict]:
+    return read_jsonl(paths.task_queue, limit=limit)
+
+
+def take_next_task(paths: TeamPaths) -> dict | None:
+    """Pop the next pending task.
+
+    We implement a simple queue using JSONL rewriting.
+    For demo purposes this is sufficient.
+    """
+
+    q = read_jsonl(paths.task_queue, limit=None)
+    if not q:
+        return None
+
+    # Find first task with status=queued
+    idx = None
+    for i, t in enumerate(q):
+        if isinstance(t, dict) and t.get("status") in (None, "queued"):
+            idx = i
+            break
+    if idx is None:
+        return None
+
+    task = q[idx]
+    task["status"] = "taken"
+    task["taken_at"] = utc_ts()
+
+    # Rewrite file atomically
+    tmp = paths.task_queue.with_suffix(".jsonl.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for j, obj in enumerate(q):
+            if j == idx:
+                f.write(json.dumps(task, ensure_ascii=False) + "\n")
+            else:
+                f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    tmp.replace(paths.task_queue)
+    return task
+
+
+def load_worker_state(paths: TeamPaths) -> dict:
+    return load_json(paths.worker_state, default={"status": "Idle", "current": None, "updated_at": None})
+
+
+def set_worker_state(paths: TeamPaths, **patch: Any) -> dict:
+    cur = load_worker_state(paths)
+    cur.update(patch)
+    cur["updated_at"] = utc_ts()
+    save_json(paths.worker_state, cur)
+    return cur

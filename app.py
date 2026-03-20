@@ -163,12 +163,22 @@ def get_client() -> OpenAI:
     http_client = DefaultHttpxClient(trust_env=False)
 
     gateway_token = os.getenv("OPENCLAW_GATEWAY_TOKEN")
+    if not gateway_token:
+        # Fallback: read local OpenClaw gateway token from ~/.openclaw/openclaw.json
+        try:
+            cfg_path = Path.home() / ".openclaw" / "openclaw.json"
+            if cfg_path.exists():
+                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                gateway_token = (((cfg.get("gateway") or {}).get("auth") or {}).get("token"))
+        except Exception:
+            gateway_token = None
+
     if gateway_token:
         base_url = os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789/v1").rstrip("/")
         agent_id = os.getenv("OPENCLAW_AGENT_ID", "main")
         return OpenAI(
             base_url=base_url,
-            api_key=gateway_token,
+            api_key=str(gateway_token),
             default_headers={"x-openclaw-agent-id": agent_id},
             http_client=http_client,
         )
